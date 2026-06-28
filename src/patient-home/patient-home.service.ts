@@ -1,22 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
-
-function parseTimeToday(timeStr: string): Date | null {
-  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-  if (!match) return null;
-  let hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const meridiem = match[3]?.toUpperCase();
-  if (meridiem === 'PM' && hours < 12) hours += 12;
-  if (meridiem === 'AM' && hours === 12) hours = 0;
-  const d = new Date();
-  d.setHours(hours, minutes, 0, 0);
-  return d;
-}
-
-function minutesUntil(date: Date): number {
-  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 60000));
-}
+import {
+  isSlotSnoozed,
+  isSlotTakenToday,
+  minutesUntil,
+  parseTimeToday,
+} from '../common/utils/medication-time.util';
 
 @Injectable()
 export class PatientHomeService {
@@ -99,6 +88,7 @@ export class PatientHomeService {
         lastActiveLabel: this.formatLastActive(user.updatedAt),
       },
       nextMedication: nextMed,
+      allDosesTakenToday: schedules.length > 0 && !nextMed,
       medicationStats: { taken, missed, remaining, total: totalDosesToday },
       healthVitals: {
         bloodPressure: bp
@@ -117,7 +107,11 @@ export class PatientHomeService {
         times: s.times,
         mealTiming: s.mealTiming,
         instruction: s.instruction,
-        todayLogs: s.logs,
+        todayLogs: s.logs.map((log) => ({
+          status: log.status,
+          scheduledTime: log.scheduledTime,
+          loggedAt: log.loggedAt,
+        })),
       })),
       relatedProducts: relatedProducts.map((p) => ({
         id: p.id,
@@ -147,7 +141,12 @@ export class PatientHomeService {
       medicineName: string;
       dose: string | null;
       times: string[];
-      logs: Array<{ status: string; loggedAt: Date }>;
+      logs: Array<{
+        status: string;
+        scheduledTime: string | null;
+        loggedAt: Date;
+        snoozeUntil?: Date | null;
+      }>;
     }>,
   ) {
     if (!schedules.length) return null;
@@ -156,6 +155,7 @@ export class PatientHomeService {
       scheduleId: string;
       medicineName: string;
       dose: string | null;
+      scheduledTime: string;
       dueAt: Date;
       minutesUntil: number;
     } | null = null;
@@ -165,38 +165,33 @@ export class PatientHomeService {
       for (const t of times) {
         const dueAt = parseTimeToday(t);
         if (!dueAt) continue;
-        const alreadyTaken = schedule.logs.some(
-          (l) => l.status === 'taken' && Math.abs(l.loggedAt.getTime() - dueAt.getTime()) < 3600000,
-        );
-        if (alreadyTaken) continue;
-        const mins = minutesUntil(dueAt);
-        if (!best || dueAt.getTime() < best.dueAt.getTime()) {
+        if (isSlotTakenToday(schedule.logs, t, dueAt)) continue;
+
+        const snoozeUntil = isSlotSnoozed(schedule.logs, t);
+        const effectiveDueAt = snoozeUntil ?? dueAt;
+        const mins = minutesUntil(effectiveDueAt);
+
+        if (!best || effectiveDueAt.getTime() < best.dueAt.getTime()) {
           best = {
             scheduleId: schedule.id,
             medicineName: schedule.medicineName,
             dose: schedule.dose,
-            dueAt,
+            scheduledTime: t,
+            dueAt: effectiveDueAt,
             minutesUntil: mins,
           };
         }
       }
     }
 
-    if (!best) {
-      const first = schedules[0];
-      return {
-        scheduleId: first.id,
-        medicineName: first.medicineName,
-        dose: first.dose,
-        minutesUntilLabel: 'Due now',
-        minutesUntil: 0,
-      };
-    }
+    if (!best) return null;
 
     return {
       scheduleId: best.scheduleId,
       medicineName: best.medicineName,
       dose: best.dose,
+      scheduledTime: best.scheduledTime,
+      canMarkTaken: true,
       minutesUntil: best.minutesUntil,
       minutesUntilLabel:
         best.minutesUntil <= 0

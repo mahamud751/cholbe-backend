@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
 import { CreateReportDto } from './dto/report.dto';
+import { UpdateReportDto } from './dto/update-report.dto';
 
 @Injectable()
 export class ReportsService {
@@ -35,6 +36,20 @@ export class ReportsService {
     });
     if (!report) throw new NotFoundException('Report not found');
     return report;
+  }
+
+  async update(patientId: string, id: string, dto: UpdateReportDto) {
+    await this.findOne(patientId, id);
+    return this.prisma.healthReport.update({
+      where: { id },
+      data: {
+        title: dto.title,
+        reportType: dto.reportType,
+        provider: dto.provider,
+        reportDate: dto.reportDate ? new Date(dto.reportDate) : undefined,
+        tip: dto.tip,
+      },
+    });
   }
 
   async remove(patientId: string, id: string) {

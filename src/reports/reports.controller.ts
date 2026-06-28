@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { CreateReportDto } from './dto/report.dto';
+import { UpdateReportDto } from './dto/update-report.dto';
 import { CurrentUser, JwtPayload } from '../common/decorators';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
@@ -28,6 +29,16 @@ export class ReportsController {
   @ApiOperation({ summary: 'Get report details' })
   findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.reportsService.findOne(user.sub, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update report details' })
+  update(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateReportDto,
+  ) {
+    return this.reportsService.update(user.sub, id, dto);
   }
 
   @Delete(':id')

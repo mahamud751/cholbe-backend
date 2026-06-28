@@ -8,6 +8,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   ProductVariant,
+  DoctorProfileStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
@@ -23,7 +24,6 @@ const PHARMACY_PRODUCTS = [
     discountPrice: 120,
     stockQuantity: 320,
     unitType: 'Bottle',
-    imageUrl: 'https://via.placeholder.com/300/4682B4/FFFFFF?text=Immunity+Syrup',
   },
   {
     name: 'Johnson Baby Shampoo',
@@ -34,7 +34,6 @@ const PHARMACY_PRODUCTS = [
     discountPrice: 315,
     stockQuantity: 180,
     unitType: 'Bottle',
-    imageUrl: 'https://via.placeholder.com/300/87CEEB/FFFFFF?text=Baby+Shampoo',
   },
   {
     name: 'Cetirizine 10 mg',
@@ -46,7 +45,6 @@ const PHARMACY_PRODUCTS = [
     stockQuantity: 1200,
     unitType: 'Stripe',
     prescriptionRequired: false,
-    imageUrl: 'https://via.placeholder.com/300/FFA500/FFFFFF?text=Cetirizine',
   },
   {
     name: 'Napa Extend 500mg',
@@ -56,7 +54,6 @@ const PHARMACY_PRODUCTS = [
     unitPrice: 12,
     stockQuantity: 800,
     unitType: 'Stripe',
-    imageUrl: 'https://via.placeholder.com/300/32CD32/FFFFFF?text=Napa',
   },
   {
     name: 'Sergel 20mg Capsule',
@@ -67,7 +64,6 @@ const PHARMACY_PRODUCTS = [
     discountPrice: 12,
     stockQuantity: 450,
     unitType: 'Stripe',
-    imageUrl: 'https://via.placeholder.com/300/8A2BE2/FFFFFF?text=Sergel',
   },
   {
     name: 'Ace Plus 500mg',
@@ -77,7 +73,6 @@ const PHARMACY_PRODUCTS = [
     unitPrice: 6,
     stockQuantity: 900,
     unitType: 'PC',
-    imageUrl: 'https://via.placeholder.com/300/20B2AA/FFFFFF?text=Ace+Plus',
   },
   {
     name: 'Dove Body Wash',
@@ -88,7 +83,6 @@ const PHARMACY_PRODUCTS = [
     discountPrice: 378,
     stockQuantity: 95,
     unitType: 'Bottle',
-    imageUrl: 'https://via.placeholder.com/300/FF69B4/FFFFFF?text=Body+Wash',
   },
   {
     name: 'Comfort Sanitary Pads',
@@ -98,7 +92,6 @@ const PHARMACY_PRODUCTS = [
     unitPrice: 180,
     stockQuantity: 220,
     unitType: 'Box',
-    imageUrl: 'https://via.placeholder.com/300/FFB6C1/FFFFFF?text=Pads',
   },
   {
     name: 'Oral-B Mouthwash',
@@ -109,7 +102,6 @@ const PHARMACY_PRODUCTS = [
     discountPrice: 261,
     stockQuantity: 140,
     unitType: 'Bottle',
-    imageUrl: 'https://via.placeholder.com/300/00CED1/FFFFFF?text=Mouthwash',
   },
   {
     name: 'Baby Diaper Rash Cream',
@@ -119,7 +111,6 @@ const PHARMACY_PRODUCTS = [
     unitPrice: 220,
     stockQuantity: 160,
     unitType: 'Tube',
-    imageUrl: 'https://via.placeholder.com/300/FFD700/FFFFFF?text=Diaper+Cream',
   },
   {
     name: 'Thyrox 50mg Tablet',
@@ -129,7 +120,6 @@ const PHARMACY_PRODUCTS = [
     unitPrice: 10,
     stockQuantity: 500,
     unitType: 'Stripe',
-    imageUrl: 'https://via.placeholder.com/300/4682B4/FFFFFF?text=Thyrox',
   },
   {
     name: 'Aamdocal Plus 50',
@@ -141,7 +131,6 @@ const PHARMACY_PRODUCTS = [
     stockQuantity: 2450,
     unitType: 'Box',
     prescriptionRequired: true,
-    imageUrl: 'https://via.placeholder.com/300/DC143C/FFFFFF?text=Aamdocal',
     linkMedicine: true,
   },
 ];
@@ -203,9 +192,46 @@ async function main() {
     },
   });
 
+  const specialtySeed = [
+    { name: 'Physician', slug: 'physician', icon: 'stethoscope' },
+    { name: 'Pediatric', slug: 'pediatric', icon: 'baby' },
+    { name: 'Gynae & obs', slug: 'gynae-obs', icon: 'female' },
+    { name: 'Dermatology', slug: 'dermatology', icon: 'skin' },
+    { name: 'Endocrinology', slug: 'endocrinology', icon: 'activity' },
+    { name: 'Cardiology', slug: 'cardiology', icon: 'heart' },
+    { name: 'General Physician', slug: 'general-physician', icon: 'user-md' },
+  ];
+  const specialties: Record<string, string> = {};
+  for (const s of specialtySeed) {
+    const row = await prisma.specialty.upsert({
+      where: { slug: s.slug },
+      update: { name: s.name, icon: s.icon, isActive: true },
+      create: { ...s, isActive: true },
+    });
+    specialties[s.slug] = row.id;
+  }
+
+  const defaultWeekly = [1, 2, 3, 4, 5].map(dayOfWeek => ({
+    dayOfWeek,
+    startTime: '09:00',
+    endTime: '17:00',
+    slotMinutes: 30,
+    isActive: true,
+  }));
+
+  async function ensureDoctorAvailability(doctorId: string) {
+    for (const slot of defaultWeekly) {
+      await prisma.doctorWeeklyAvailability.upsert({
+        where: { doctorId_dayOfWeek: { doctorId, dayOfWeek: slot.dayOfWeek } },
+        update: slot,
+        create: { doctorId, ...slot },
+      });
+    }
+  }
+
   const doctorUser = await prisma.user.upsert({
     where: { email: 'doctor@cholbe.com' },
-    update: {},
+    update: { fullName: 'Dr. Sarah Ahmed' },
     create: {
       email: 'doctor@cholbe.com',
       fullName: 'Dr. Sarah Ahmed',
@@ -215,14 +241,24 @@ async function main() {
       doctorProfile: {
         create: {
           specialty: 'Cardiology',
+          specialtyId: specialties.cardiology,
           degree: 'MBBS, FCPS',
           fee: 500,
           categories: ['Heart', 'General'],
           isOnline: true,
+          status: DoctorProfileStatus.ACTIVE,
         },
       },
     },
+    include: { doctorProfile: true },
   });
+  if (doctorUser.doctorProfile) {
+    await prisma.doctorProfile.update({
+      where: { id: doctorUser.doctorProfile.id },
+      data: { status: DoctorProfileStatus.ACTIVE, specialtyId: specialties.cardiology },
+    });
+    await ensureDoctorAvailability(doctorUser.doctorProfile.id);
+  }
 
   let doctorMedicine = await prisma.medicine.findFirst({
     where: { name: 'Aamdocal Plus 50', source: MedicineSource.DOCTOR },
@@ -261,7 +297,7 @@ async function main() {
           stockQuantity: product.stockQuantity,
           minAlertLevel: 20,
           unitType: product.unitType,
-          imageUrl: product.imageUrl,
+          
           prescriptionRequired: prescriptionRequired ?? false,
           isActive: true,
         },
@@ -460,9 +496,9 @@ async function main() {
   }
 
   const extraDoctors = [
-    { email: 'dr.ahmed@cholbe.com', fullName: 'Dr. Ahmed', specialty: 'Cardiologist', fee: 800, categories: ['Heart'] },
-    { email: 'dr.alex@cholbe.com', fullName: 'Dr. Alex Same', specialty: 'General Physician', fee: 500, categories: ['General'] },
-    { email: 'dr.fatima@cholbe.com', fullName: 'Dr. Fatima Khan', specialty: 'Pediatrics', fee: 600, categories: ['Child'] },
+    { email: 'dr.ahmed@cholbe.com', fullName: 'Dr. Ahmed', specialty: 'Cardiologist', specialtySlug: 'cardiology', fee: 800, categories: ['Heart'] },
+    { email: 'dr.alex@cholbe.com', fullName: 'Dr. Alex Same', specialty: 'General Physician', specialtySlug: 'general-physician', fee: 500, categories: ['General'] },
+    { email: 'dr.fatima@cholbe.com', fullName: 'Dr. Fatima Khan', specialty: 'Pediatrics', specialtySlug: 'pediatric', fee: 600, categories: ['Child'] },
   ];
 
   const doctorProfiles = [];
@@ -479,17 +515,22 @@ async function main() {
         doctorProfile: {
           create: {
             specialty: d.specialty,
+            specialtyId: specialties[d.specialtySlug],
             degree: 'MBBS',
             fee: d.fee,
             categories: d.categories,
             isOnline: true,
-            imageUrl: 'https://via.placeholder.com/150/4682B4/FFFFFF?text=Dr',
+            status: DoctorProfileStatus.ACTIVE,
+            imageUrl: null,
           },
         },
       },
       include: { doctorProfile: true },
     });
-    if (docUser.doctorProfile) doctorProfiles.push(docUser.doctorProfile);
+    if (docUser.doctorProfile) {
+      doctorProfiles.push(docUser.doctorProfile);
+      await ensureDoctorAvailability(docUser.doctorProfile.id);
+    }
   }
 
   const primaryDoctor = await prisma.doctorProfile.findUnique({ where: { userId: doctorUser.id } });
@@ -509,6 +550,7 @@ async function main() {
         durationMin: 15,
         fee: assignedDoctor.fee,
         status: 'scheduled',
+        consultationType: 'VIDEO',
         agoraChannel: 'cholbe_seed_consult_01',
         paymentMethod: 'BKASH',
       },
@@ -522,6 +564,7 @@ async function main() {
   console.log('  Doctor:   doctor@cholbe.com / Password123!');
   console.log(`  Pharmacy products: ${PHARMACY_PRODUCTS.length}`);
   console.log(`  Doctors seeded: ${doctorProfiles.length + 1}`);
+  console.log(`  Specialties seeded: ${Object.keys(specialties).length}`);
 }
 
 main()

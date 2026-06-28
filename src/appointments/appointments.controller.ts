@@ -34,6 +34,7 @@ export class AppointmentsController {
       timeSlot: string;
       durationMin?: number;
       paymentMethod?: string;
+      consultationType?: 'VIDEO' | 'AUDIO' | 'CHAT';
     },
   ) {
     return this.service.book(user.sub, body);

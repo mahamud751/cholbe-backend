@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto } from './dto/prescription.dto';
+import { CreatePrescriptionDto, ScanPrescriptionDto } from './dto/prescription.dto';
 import { CurrentUser, JwtPayload } from '../common/decorators';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
@@ -11,6 +11,12 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 @ApiBearerAuth('access-token')
 export class PrescriptionsController {
   constructor(private prescriptionsService: PrescriptionsService) {}
+
+  @Post('scan')
+  @ApiOperation({ summary: 'Scan uploaded prescription image and extract medicines' })
+  scan(@CurrentUser() user: JwtPayload, @Body() dto: ScanPrescriptionDto) {
+    return this.prescriptionsService.scan(user.sub, dto);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Upload prescription with optional extracted medicines' })
@@ -22,6 +28,12 @@ export class PrescriptionsController {
   @ApiOperation({ summary: 'List saved prescriptions' })
   findAll(@CurrentUser() user: JwtPayload) {
     return this.prescriptionsService.findAll(user.sub);
+  }
+
+  @Get(':id/draft')
+  @ApiOperation({ summary: 'Get medication draft from saved prescription' })
+  getDraft(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.prescriptionsService.getDraft(user.sub, id);
   }
 
   @Get(':id')

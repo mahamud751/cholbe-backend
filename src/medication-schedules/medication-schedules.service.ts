@@ -1,10 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
 import { CreateMedicationScheduleDto } from './dto/medication-schedule.dto';
+import {
+  dayBounds,
+  isSlotTakenToday,
+  normalizeScheduledTime,
+  parseTimeToday,
+} from '../common/utils/medication-time.util';
 
 @Injectable()
 export class MedicationSchedulesService {
   constructor(private prisma: PrismaService) {}
+
+  private parseDate(value?: string) {
+    return value ? new Date(value) : undefined;
+  }
 
   create(patientId: string, dto: CreateMedicationScheduleDto) {
     return this.prisma.medicationSchedule.create({
@@ -15,6 +29,20 @@ export class MedicationSchedulesService {
         instruction: dto.instruction,
         mealTiming: dto.mealTiming,
         times: dto.times ?? [],
+        frequency: dto.frequency,
+        startDate: this.parseDate(dto.startDate),
+        endDate: this.parseDate(dto.endDate),
+        reminderEnabled: dto.reminderEnabled ?? true,
+        reminderBeforeMinutes: dto.reminderBeforeMinutes,
+        followUpEnabled: dto.followUpEnabled ?? false,
+        followUpMinutes: dto.followUpMinutes,
+        followUpTime: dto.followUpTime,
+        refillEnabled: dto.refillEnabled ?? false,
+        inventoryCount: dto.inventoryCount,
+        refillDate: this.parseDate(dto.refillDate),
+        refillTime: dto.refillTime,
+        caregiverName: dto.caregiverName,
+        prescriptionId: dto.prescriptionId,
       },
     });
   }
@@ -32,11 +60,41 @@ export class MedicationSchedulesService {
     scheduleId: string,
     status: 'taken' | 'missed' | 'snoozed',
     snoozeMinutes = 10,
+    scheduledTime?: string,
   ) {
     const schedule = await this.prisma.medicationSchedule.findFirst({
       where: { id: scheduleId, patientId },
     });
     if (!schedule) throw new NotFoundException('Medication schedule not found');
+
+    const { startOfDay, endOfDay } = dayBounds();
+    const todayLogs = await this.prisma.medicationLog.findMany({
+      where: {
+        scheduleId,
+        loggedAt: { gte: startOfDay, lte: endOfDay },
+      },
+    });
+
+    const resolvedTime =
+      scheduledTime?.trim() ||
+      (schedule.times.length === 1 ? schedule.times[0] : undefined);
+
+    if (status === 'taken') {
+      if (!resolvedTime) {
+        throw new BadRequestException(
+          'scheduledTime is required when logging a dose',
+        );
+      }
+      const dueAt = parseTimeToday(resolvedTime);
+      if (!dueAt) {
+        throw new BadRequestException('Invalid scheduled time');
+      }
+      if (isSlotTakenToday(todayLogs, resolvedTime, dueAt)) {
+        throw new BadRequestException(
+          'This dose has already been marked as taken today',
+        );
+      }
+    }
 
     const snoozeUntil =
       status === 'snoozed'
@@ -44,7 +102,14 @@ export class MedicationSchedulesService {
         : undefined;
 
     return this.prisma.medicationLog.create({
-      data: { scheduleId, status, snoozeUntil },
+      data: {
+        scheduleId,
+        status,
+        scheduledTime: resolvedTime
+          ? normalizeScheduledTime(resolvedTime)
+          : undefined,
+        snoozeUntil,
+      },
     });
   }
 

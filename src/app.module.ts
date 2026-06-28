@@ -21,6 +21,8 @@ import { UploadsModule } from './uploads/uploads.module';
 import { MedicationSchedulesModule } from './medication-schedules/medication-schedules.module';
 import { PatientHomeModule } from './patient-home/patient-home.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SpecialtiesModule } from './specialties/specialties.module';
+import { ConsultationsModule } from './consultations/consultations.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -47,6 +49,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     MedicationSchedulesModule,
     PatientHomeModule,
     NotificationsModule,
+    SpecialtiesModule,
+    ConsultationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

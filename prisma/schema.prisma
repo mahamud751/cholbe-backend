@@ -81,6 +81,18 @@ enum OtpChannel {
   EMAIL
 }
 
+enum DoctorProfileStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+}
+
+enum ConsultationType {
+  VIDEO
+  AUDIO
+  CHAT
+}
+
 // ─── Users & profiles ────────────────────────────────────────────────────────
 
 model User {
@@ -109,6 +121,8 @@ model User {
   medicinesCreated Medicine[]      @relation("MedicineCreator")
   vendorProducts  VendorProduct[]  @relation("VendorProductOwner")
   otpCodes        OtpCode[]
+  patientAppointments Appointment[] @relation("PatientAppointments")
+  consultationMessages ConsultationMessage[]
 
   @@index([role])
   @@index([status])
@@ -173,19 +187,111 @@ model VendorProfile {
 }
 
 model DoctorProfile {
-  id         String   @id @default(uuid())
-  userId     String   @unique
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  specialty  String
-  degree     String?
-  fee        Decimal  @default(0) @db.Decimal(10, 2)
-  categories String[] @default([])
-  imageUrl   String?
-  isOnline   Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty          String
+  specialtyId        String?
+  specialtyRef       Specialty?          @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  degree             String?
+  fee                Decimal             @default(0) @db.Decimal(10, 2)
+  categories         String[]            @default([])
+  imageUrl           String?
+  bio                String?
+  isOnline           Boolean             @default(false)
+  status             DoctorProfileStatus @default(PENDING)
+  registrationNumber String?
+  chamberAddress     String?
+  languages          String[]            @default([])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  appointments Appointment[]
+  appointments       Appointment[]
+  weeklyAvailability DoctorWeeklyAvailability[]
+  dateOverrides      DoctorDateOverride[]
+  qualifications     DoctorQualification[]
+  experiences        DoctorExperience[]
+  instructions       DoctorInstruction[]
+}
+
+model DoctorQualification {
+  id           String        @id @default(uuid())
+  doctorId     String
+  doctor       DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  degree       String
+  institution  String
+  fieldOfStudy String?
+  yearFrom     Int?
+  yearTo       Int?
+  createdAt    DateTime      @default(now())
+
+  @@index([doctorId])
+}
+
+model DoctorExperience {
+  id          String        @id @default(uuid())
+  doctorId    String
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  title       String
+  institution String
+  startDate   DateTime
+  endDate     DateTime?
+  isPresent   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  @@index([doctorId])
+}
+
+model DoctorInstruction {
+  id        String        @id @default(uuid())
+  doctorId  String
+  doctor    DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  name      String
+  startDate DateTime
+  endDate   DateTime?
+  isPresent Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  @@index([doctorId])
+}
+
+model Specialty {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  icon      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctors DoctorProfile[]
+}
+
+model DoctorWeeklyAvailability {
+  id          String        @id @default(uuid())
+  doctorId    String
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
+  slotMinutes Int           @default(30)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([doctorId, dayOfWeek])
+  @@index([doctorId])
+}
+
+model DoctorDateOverride {
+  id          String        @id @default(uuid())
+  doctorId    String
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date        DateTime      @db.Date
+  isAvailable Boolean       @default(false)
+
+  @@unique([doctorId, date])
+  @@index([doctorId, date])
 }
 
 model OtpCode {
@@ -296,6 +402,7 @@ model Prescription {
   createdAt DateTime @default(now())
 
   medicines PrescriptionMedicine[]
+  schedules MedicationSchedule[]
 
   @@index([patientId])
 }
@@ -308,31 +415,56 @@ model PrescriptionMedicine {
   dose           String?
   instruction    String?
   mealTiming     String?
+  frequency      String?
+  times          String[]     @default([])
+  startDate      DateTime?
+  endDate        DateTime?
+  reminderBeforeMinutes Int?
+  followUpMinutes       Int?
+  inventoryCount        Int?
 }
 
 model MedicationSchedule {
-  id           String   @id @default(uuid())
-  patientId    String
-  patient      User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  medicineName String
-  dose         String?
-  instruction  String?
-  mealTiming   String?
-  times        String[] @default([])
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  patientId             String
+  patient               User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  medicineName          String
+  dose                  String?
+  instruction           String?
+  mealTiming            String?
+  times                 String[] @default([])
+  frequency             String?
+  startDate             DateTime?
+  endDate               DateTime?
+  reminderEnabled       Boolean  @default(true)
+  reminderBeforeMinutes Int?
+  followUpEnabled       Boolean  @default(false)
+  followUpMinutes       Int?
+  followUpTime          String?
+  refillEnabled         Boolean  @default(false)
+  inventoryCount        Int?
+  refillDate            DateTime?
+  refillTime            String?
+  caregiverName         String?
+  prescriptionId        String?
+  prescription          Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: SetNull)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   logs MedicationLog[]
 }
 
 model MedicationLog {
-  id         String             @id @default(uuid())
-  scheduleId String
-  schedule   MedicationSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  status     String
-  loggedAt   DateTime           @default(now())
-  snoozeUntil DateTime?
+  id            String             @id @default(uuid())
+  scheduleId    String
+  schedule      MedicationSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  status        String
+  scheduledTime String?
+  loggedAt      DateTime           @default(now())
+  snoozeUntil   DateTime?
+
+  @@index([scheduleId, loggedAt])
 }
 
 model HealthVital {
@@ -454,21 +586,53 @@ model PaymentTransaction {
 // ─── Doctors & appointments ──────────────────────────────────────────────────
 
 model Appointment {
-  id            String        @id @default(uuid())
-  patientId     String
-  doctorId      String
-  doctor        DoctorProfile @relation(fields: [doctorId], references: [id])
-  scheduledDate DateTime
-  timeSlot      String
-  durationMin   Int           @default(15)
-  fee           Decimal       @db.Decimal(10, 2)
-  status        String        @default("scheduled")
-  paymentMethod PaymentMethod?
-  agoraChannel  String?       @unique
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id               String           @id @default(uuid())
+  patientId        String
+  patient          User             @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctorId         String
+  doctor           DoctorProfile    @relation(fields: [doctorId], references: [id])
+  scheduledDate    DateTime
+  timeSlot         String
+  durationMin      Int              @default(15)
+  fee              Decimal          @db.Decimal(10, 2)
+  consultationType ConsultationType @default(VIDEO)
+  status           String           @default("scheduled")
+  paymentMethod    PaymentMethod?
+  agoraChannel     String?          @unique
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  messages ConsultationMessage[]
+  feedback ConsultationFeedback?
 
   @@index([patientId])
+  @@index([doctorId])
+  @@index([doctorId, scheduledDate])
+}
+
+model ConsultationMessage {
+  id             String      @id @default(uuid())
+  appointmentId  String
+  appointment    Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  attachmentUrl  String?
+  attachmentType String?
+  createdAt      DateTime    @default(now())
+
+  @@index([appointmentId, createdAt])
+}
+
+model ConsultationFeedback {
+  id            String        @id @default(uuid())
+  appointmentId String        @unique
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctorId      String?
+  rating        Int
+  comment       String?
+  createdAt     DateTime      @default(now())
+
   @@index([doctorId])
 }
 

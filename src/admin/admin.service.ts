@@ -119,4 +119,49 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async listAppointments(status?: string) {
+    return this.prisma.appointment.findMany({
+      where: status ? { status } : {},
+      include: {
+        patient: { select: { fullName: true, phone: true, avatarUrl: true } },
+        doctor: {
+          include: {
+            user: { select: { fullName: true, avatarUrl: true } },
+            specialtyRef: true,
+          },
+        },
+        feedback: true,
+      },
+      orderBy: { scheduledDate: 'desc' },
+    });
+  }
+
+  async updateAppointmentStatus(id: string, status: string) {
+    const appt = await this.prisma.appointment.findUnique({ where: { id } });
+    if (!appt) throw new Error('Appointment not found');
+    return this.prisma.appointment.update({ where: { id }, data: { status } });
+  }
+
+  async listReviews(doctorId?: string) {
+    return this.prisma.consultationFeedback.findMany({
+      where: doctorId ? { doctorId } : {},
+      include: {
+        appointment: {
+          include: {
+            patient: { select: { fullName: true, avatarUrl: true } },
+            doctor: { include: { user: { select: { fullName: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async deleteReview(id: string) {
+    const review = await this.prisma.consultationFeedback.findUnique({ where: { id } });
+    if (!review) throw new Error('Review not found');
+    await this.prisma.consultationFeedback.delete({ where: { id } });
+    return { deleted: true };
+  }
 }

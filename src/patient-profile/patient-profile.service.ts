@@ -39,6 +39,18 @@ export class PatientProfileService {
     });
   }
 
+  async updateFamily(userId: string, id: string, dto: FamilyMemberDto) {
+    const profile = await this.getProfile(userId);
+    const member = await this.prisma.familyMember.findFirst({
+      where: { id, patientId: profile.id },
+    });
+    if (!member) throw new NotFoundException('Family member not found');
+    return this.prisma.familyMember.update({
+      where: { id },
+      data: dto,
+    });
+  }
+
   async removeFamily(userId: string, id: string) {
     const profile = await this.getProfile(userId);
     const member = await this.prisma.familyMember.findFirst({

@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AgoraModule } from '../agora/agora.module';
+import { DoctorsModule } from '../doctors/doctors.module';
 import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 
 @Module({
-  imports: [AgoraModule],
+  imports: [AgoraModule, DoctorsModule],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],
   exports: [AppointmentsService],

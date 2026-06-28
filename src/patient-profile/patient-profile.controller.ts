@@ -38,6 +38,15 @@ export class PatientProfileController {
     return this.service.addFamily(user.sub, dto);
   }
 
+  @Patch('family-members/:id')
+  updateFamily(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: FamilyMemberDto,
+  ) {
+    return this.service.updateFamily(user.sub, id, dto);
+  }
+
   @Delete('family-members/:id')
   removeFamily(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.service.removeFamily(user.sub, id);

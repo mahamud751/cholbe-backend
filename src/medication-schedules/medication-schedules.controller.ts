@@ -32,11 +32,12 @@ export class MedicationSchedulesController {
     @Param('id') id: string,
     @Body('status') status: 'taken' | 'missed' | 'snoozed',
     @Body('snoozeMinutes') snoozeMinutes?: number,
+    @Body('scheduledTime') scheduledTime?: string,
   ) {
     if (!['taken', 'missed', 'snoozed'].includes(status)) {
       throw new BadRequestException('Invalid status');
     }
-    return this.service.logDose(user.sub, id, status, snoozeMinutes ?? 10);
+    return this.service.logDose(user.sub, id, status, snoozeMinutes ?? 10, scheduledTime);
   }
 
   @Patch(':id')
