@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { MedicinesService } from './medicines.service';
@@ -57,5 +57,13 @@ export class MedicinesController {
     @Body() dto: UpdateMedicineDto,
   ) {
     return this.medicinesService.update(id, user.sub, user.role as UserRole, dto);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Admin: delete medicine' })
+  delete(@Param('id') id: string) {
+    return this.medicinesService.delete(id);
   }
 }

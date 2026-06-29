@@ -94,7 +94,9 @@ export class PatientHomeService {
         bloodPressure: bp
           ? { value: bp.value, checkedAgo: this.formatAgo(bp.recordedAt) }
           : null,
-        oxygen: oxygen ? { value: oxygen.value } : null,
+        oxygen: oxygen
+          ? { value: oxygen.value, checkedAgo: this.formatAgo(oxygen.recordedAt) }
+          : null,
       },
       refill: {
         daysUntil: 5,

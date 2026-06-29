@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdatePatientProfileDto {
   @ApiPropertyOptional()
@@ -52,6 +52,17 @@ export class FamilyMemberDto {
   @IsOptional()
   @IsString()
   avatarUrl?: string;
+
+  @ApiPropertyOptional({ example: 'son@email.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ minLength: 8, description: 'Required when creating a family member account' })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
 }
 
 export class EmergencyContactDto {
@@ -66,4 +77,18 @@ export class EmergencyContactDto {
   @ApiProperty()
   @IsString()
   phone!: string;
+}
+
+export class UpdateHealthVitalsDto {
+  @ApiPropertyOptional({ example: '120/80' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  bloodPressure?: string;
+
+  @ApiPropertyOptional({ example: '98%' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  oxygen?: string;
 }

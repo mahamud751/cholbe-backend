@@ -14,6 +14,19 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+function formatTimeSlotLocal(date: Date): string {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const meridiem = hours >= 12 ? 'PM' : 'AM';
+  const h12 = hours % 12 || 12;
+  return `${h12}:${minutes.toString().padStart(2, '0')} ${meridiem}`;
+}
+
+function todayDateOnly(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+}
+
 const PHARMACY_PRODUCTS = [
   {
     name: 'Immunity Support',
@@ -171,6 +184,26 @@ async function main() {
     create: { userId: customer.id },
   });
 
+  const pinoUser = await prisma.user.upsert({
+    where: { email: 'pino@gmail.com' },
+    update: { fullName: 'Pino Test', status: UserStatus.ACTIVE },
+    create: {
+      email: 'pino@gmail.com',
+      fullName: 'Pino Test',
+      passwordHash,
+      role: UserRole.CUSTOMER,
+      status: UserStatus.ACTIVE,
+      patientProfile: { create: { age: 30, gender: 'Male' } },
+      cart: { create: {} },
+    },
+  });
+
+  await prisma.cart.upsert({
+    where: { userId: pinoUser.id },
+    update: {},
+    create: { userId: pinoUser.id },
+  });
+
   const vendorUser = await prisma.user.upsert({
     where: { email: 'vendor@cholbe.com' },
     update: {},
@@ -191,6 +224,57 @@ async function main() {
       },
     },
   });
+
+  const vendorProfile = await prisma.vendorProfile.findUnique({
+    where: { userId: vendorUser.id },
+  });
+  if (vendorProfile) {
+    await prisma.vendorPayoutMethod.deleteMany({ where: { vendorId: vendorProfile.id } });
+    await prisma.vendorDocument.deleteMany({ where: { vendorId: vendorProfile.id } });
+    await prisma.vendorPayoutMethod.createMany({
+      data: [
+        {
+          vendorId: vendorProfile.id,
+          label: 'Dutch Bangla Bank',
+          methodType: 'BANK',
+          accountMasked: 'xxx-xxx-5678',
+          isPrimary: true,
+        },
+        {
+          vendorId: vendorProfile.id,
+          label: 'bkash Merchant',
+          methodType: 'BKASH',
+          accountMasked: '017xx-xxx678',
+          isPrimary: false,
+        },
+      ],
+    });
+    await prisma.vendorDocument.createMany({
+      data: [
+        {
+          vendorId: vendorProfile.id,
+          fileName: 'Drug License_2024.pdf',
+          fileUrl: '/uploads/vendor-docs/seed-drug-license.pdf',
+          mimeType: 'application/pdf',
+          status: 'VERIFIED',
+        },
+        {
+          vendorId: vendorProfile.id,
+          fileName: 'Trade License_Uttara.png',
+          fileUrl: '/uploads/vendor-docs/seed-trade-license.png',
+          mimeType: 'image/png',
+          status: 'VERIFIED',
+        },
+        {
+          vendorId: vendorProfile.id,
+          fileName: 'NID-Card',
+          fileUrl: '/uploads/vendor-docs/seed-nid.png',
+          mimeType: 'image/png',
+          status: 'VERIFIED',
+        },
+      ],
+    });
+  }
 
   const specialtySeed = [
     { name: 'Physician', slug: 'physician', icon: 'stethoscope' },
@@ -220,18 +304,19 @@ async function main() {
   }));
 
   async function ensureDoctorAvailability(doctorId: string) {
-    for (const slot of defaultWeekly) {
-      await prisma.doctorWeeklyAvailability.upsert({
-        where: { doctorId_dayOfWeek: { doctorId, dayOfWeek: slot.dayOfWeek } },
-        update: slot,
-        create: { doctorId, ...slot },
-      });
-    }
+    await prisma.doctorWeeklyAvailability.deleteMany({ where: { doctorId } });
+    await prisma.doctorWeeklyAvailability.createMany({
+      data: defaultWeekly.map(slot => ({ doctorId, ...slot })),
+    });
   }
 
   const doctorUser = await prisma.user.upsert({
     where: { email: 'doctor@cholbe.com' },
-    update: { fullName: 'Dr. Sarah Ahmed' },
+    update: {
+      fullName: 'Dr. Sarah Ahmed',
+      status: UserStatus.ACTIVE,
+      role: UserRole.DOCTOR,
+    },
     create: {
       email: 'doctor@cholbe.com',
       fullName: 'Dr. Sarah Ahmed',
@@ -240,11 +325,11 @@ async function main() {
       status: UserStatus.ACTIVE,
       doctorProfile: {
         create: {
-          specialty: 'Cardiology',
-          specialtyId: specialties.cardiology,
+          specialty: 'General Physician',
+          specialtyId: specialties['general-physician'],
           degree: 'MBBS, FCPS',
           fee: 500,
-          categories: ['Heart', 'General'],
+          categories: ['General', 'Physician'],
           isOnline: true,
           status: DoctorProfileStatus.ACTIVE,
         },
@@ -252,13 +337,42 @@ async function main() {
     },
     include: { doctorProfile: true },
   });
-  if (doctorUser.doctorProfile) {
-    await prisma.doctorProfile.update({
-      where: { id: doctorUser.doctorProfile.id },
-      data: { status: DoctorProfileStatus.ACTIVE, specialtyId: specialties.cardiology },
+
+  let testDoctor = doctorUser.doctorProfile;
+  if (!testDoctor) {
+    testDoctor = await prisma.doctorProfile.create({
+      data: {
+        userId: doctorUser.id,
+        specialty: 'General Physician',
+        specialtyId: specialties['general-physician'],
+        degree: 'MBBS, FCPS',
+        fee: 500,
+        categories: ['General', 'Physician'],
+        isOnline: true,
+        status: DoctorProfileStatus.ACTIVE,
+      },
     });
-    await ensureDoctorAvailability(doctorUser.doctorProfile.id);
+  } else {
+    testDoctor = await prisma.doctorProfile.update({
+      where: { id: testDoctor.id },
+      data: {
+        specialty: 'General Physician',
+        specialtyId: specialties['general-physician'],
+        degree: 'MBBS, FCPS',
+        fee: 500,
+        categories: ['General', 'Physician'],
+        isOnline: true,
+        status: DoctorProfileStatus.ACTIVE,
+      },
+    });
   }
+  await ensureDoctorAvailability(testDoctor.id);
+
+  // Keep only one active test doctor visible in the app.
+  await prisma.doctorProfile.updateMany({
+    where: { id: { not: testDoctor.id } },
+    data: { status: DoctorProfileStatus.INACTIVE },
+  });
 
   let doctorMedicine = await prisma.medicine.findFirst({
     where: { name: 'Aamdocal Plus 50', source: MedicineSource.DOCTOR },
@@ -340,10 +454,63 @@ async function main() {
   });
 
   await prisma.familyMember.deleteMany({ where: { patientId: patientProfile.id } });
+
+  const mehidiUser = await prisma.user.upsert({
+    where: { email: 'mehidi.family@cholbe.com' },
+    update: { fullName: 'Mehidi Hasan' },
+    create: {
+      email: 'mehidi.family@cholbe.com',
+      phone: '01677589450',
+      fullName: 'Mehidi Hasan',
+      passwordHash,
+      role: UserRole.CUSTOMER,
+      status: UserStatus.ACTIVE,
+      patientProfile: {
+        create: { age: 12, gender: 'Male', managedByUserId: customer.id },
+      },
+      cart: { create: {} },
+    },
+  });
+
+  const rohimaUser = await prisma.user.upsert({
+    where: { email: 'rohima.family@cholbe.com' },
+    update: { fullName: 'Rohima Akter' },
+    create: {
+      email: 'rohima.family@cholbe.com',
+      phone: '01677589451',
+      fullName: 'Rohima Akter',
+      passwordHash,
+      role: UserRole.CUSTOMER,
+      status: UserStatus.ACTIVE,
+      patientProfile: {
+        create: { age: 8, gender: 'Female', managedByUserId: customer.id },
+      },
+      cart: { create: {} },
+    },
+  });
+
   await prisma.familyMember.createMany({
     data: [
-      { patientId: patientProfile.id, name: 'Mehidi Hasan', relationship: 'Son', age: 12, gender: 'Male' },
-      { patientId: patientProfile.id, name: 'Rohima Akter', relationship: 'Daughter', age: 8, gender: 'Female' },
+      {
+        patientId: patientProfile.id,
+        memberUserId: mehidiUser.id,
+        name: 'Mehidi Hasan',
+        relationship: 'Son',
+        age: 12,
+        gender: 'Male',
+        email: 'mehidi.family@cholbe.com',
+        phone: '01677589450',
+      },
+      {
+        patientId: patientProfile.id,
+        memberUserId: rohimaUser.id,
+        name: 'Rohima Akter',
+        relationship: 'Daughter',
+        age: 8,
+        gender: 'Female',
+        email: 'rohima.family@cholbe.com',
+        phone: '01677589451',
+      },
     ],
   });
 
@@ -495,53 +662,72 @@ async function main() {
     }
   }
 
-  const extraDoctors = [
-    { email: 'dr.ahmed@cholbe.com', fullName: 'Dr. Ahmed', specialty: 'Cardiologist', specialtySlug: 'cardiology', fee: 800, categories: ['Heart'] },
-    { email: 'dr.alex@cholbe.com', fullName: 'Dr. Alex Same', specialty: 'General Physician', specialtySlug: 'general-physician', fee: 500, categories: ['General'] },
-    { email: 'dr.fatima@cholbe.com', fullName: 'Dr. Fatima Khan', specialty: 'Pediatrics', specialtySlug: 'pediatric', fee: 600, categories: ['Child'] },
-  ];
-
-  const doctorProfiles = [];
-  for (const d of extraDoctors) {
-    const docUser = await prisma.user.upsert({
-      where: { email: d.email },
-      update: { fullName: d.fullName },
-      create: {
-        email: d.email,
-        fullName: d.fullName,
-        passwordHash,
-        role: UserRole.DOCTOR,
-        status: UserStatus.ACTIVE,
-        doctorProfile: {
-          create: {
-            specialty: d.specialty,
-            specialtyId: specialties[d.specialtySlug],
-            degree: 'MBBS',
-            fee: d.fee,
-            categories: d.categories,
-            isOnline: true,
-            status: DoctorProfileStatus.ACTIVE,
-            imageUrl: null,
-          },
-        },
-      },
-      include: { doctorProfile: true },
-    });
-    if (docUser.doctorProfile) {
-      doctorProfiles.push(docUser.doctorProfile);
-      await ensureDoctorAvailability(docUser.doctorProfile.id);
-    }
-  }
-
-  const primaryDoctor = await prisma.doctorProfile.findUnique({ where: { userId: doctorUser.id } });
-  if (primaryDoctor) doctorProfiles.push(primaryDoctor);
-
-  const assignedDoctor = doctorProfiles.find(d => d.specialty === 'Cardiologist') ?? doctorProfiles[0];
+  const assignedDoctor = testDoctor;
   if (assignedDoctor) {
+    await prisma.appointment.deleteMany({ where: { doctorId: assignedDoctor.id } });
+    await prisma.doctorQualification.deleteMany({ where: { doctorId: assignedDoctor.id } });
+    await prisma.doctorQualification.createMany({
+      data: [
+        {
+          doctorId: assignedDoctor.id,
+          degree: 'MBBS',
+          institution: 'Dhaka Medical College',
+          yearTo: 2012,
+        },
+        {
+          doctorId: assignedDoctor.id,
+          degree: 'FCPS',
+          institution: 'Bangladesh College of Physicians and Surgeons',
+          fieldOfStudy: 'Medicine',
+          yearTo: 2018,
+        },
+      ],
+    });
+    await prisma.doctorProfile.update({
+      where: { id: assignedDoctor.id },
+      data: {
+        bio: 'Experienced general physician specializing in chronic care and telemedicine consultations.',
+        chamberAddress: 'House 12, Road 5, Gulshan, Dhaka',
+      },
+    });
+
+    await prisma.doctorPayoutMethod.deleteMany({ where: { doctorId: assignedDoctor.id } });
+    await prisma.doctorPayoutMethod.create({
+      data: {
+        doctorId: assignedDoctor.id,
+        label: 'Primary bKash',
+        methodType: 'BKASH',
+        accountMasked: '01XX-XXXXXX',
+        isPrimary: true,
+      },
+    });
+
     const soon = new Date();
     soon.setMinutes(soon.getMinutes() + 10);
-    await prisma.appointment.deleteMany({ where: { patientId: customer.id } });
-    await prisma.appointment.create({
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 5);
+
+    const liveCallTime = new Date();
+    liveCallTime.setMinutes(liveCallTime.getMinutes() - 2);
+
+    const liveVideoAppt = await prisma.appointment.create({
+      data: {
+        patientId: pinoUser.id,
+        doctorId: assignedDoctor.id,
+        scheduledDate: todayDateOnly(),
+        timeSlot: formatTimeSlotLocal(liveCallTime),
+        durationMin: 30,
+        fee: assignedDoctor.fee,
+        status: 'confirmed',
+        consultationType: 'VIDEO',
+        agoraChannel: 'cholbe_live_call_test',
+        paymentMethod: 'BKASH',
+      },
+    });
+
+    const videoAppt = await prisma.appointment.create({
       data: {
         patientId: customer.id,
         doctorId: assignedDoctor.id,
@@ -555,15 +741,88 @@ async function main() {
         paymentMethod: 'BKASH',
       },
     });
+
+    const chatAppt = await prisma.appointment.create({
+      data: {
+        patientId: mehidiUser.id,
+        doctorId: assignedDoctor.id,
+        scheduledDate: new Date(),
+        timeSlot: '2:00 PM',
+        durationMin: 20,
+        fee: assignedDoctor.fee,
+        status: 'confirmed',
+        consultationType: 'CHAT',
+        paymentMethod: 'BKASH',
+      },
+    });
+
+    await prisma.appointment.create({
+      data: {
+        patientId: rohimaUser.id,
+        doctorId: assignedDoctor.id,
+        scheduledDate: nextWeek,
+        timeSlot: '11:00 AM',
+        durationMin: 15,
+        fee: assignedDoctor.fee,
+        status: 'confirmed',
+        consultationType: 'VIDEO',
+        agoraChannel: 'cholbe_seed_consult_02',
+        paymentMethod: 'BKASH',
+      },
+    });
+
+    await prisma.appointment.create({
+      data: {
+        patientId: customer.id,
+        doctorId: assignedDoctor.id,
+        scheduledDate: yesterday,
+        timeSlot: '9:00 AM',
+        durationMin: 15,
+        fee: assignedDoctor.fee,
+        status: 'completed',
+        consultationType: 'VIDEO',
+        agoraChannel: 'cholbe_seed_consult_done',
+        paymentMethod: 'BKASH',
+      },
+    });
+
+    await prisma.consultationMessage.deleteMany({
+      where: { appointmentId: chatAppt.id },
+    });
+    await prisma.consultationMessage.createMany({
+      data: [
+        {
+          appointmentId: chatAppt.id,
+          senderId: mehidiUser.id,
+          content: 'Hello doctor, I have been having headaches for two days.',
+        },
+        {
+          appointmentId: chatAppt.id,
+          senderId: doctorUser.id,
+          content: 'Hello Mehidi. Can you tell me if you have fever or nausea?',
+        },
+        {
+          appointmentId: chatAppt.id,
+          senderId: mehidiUser.id,
+          content: 'No fever, but I feel tired in the afternoon.',
+        },
+      ],
+    });
+
+    void videoAppt;
+    void liveVideoAppt;
   }
 
   console.log('Seed complete:');
   console.log('  Admin:    admin@cholbe.com / Password123!');
   console.log('  Customer: rayhan@gmail.com / Password123!');
+  console.log('  Live test patient: pino@gmail.com / Password123!  (video call NOW with doctor@cholbe.com)');
+  console.log('  Family:   mehidi.family@cholbe.com / Password123!');
+  console.log('  Family:   rohima.family@cholbe.com / Password123!');
   console.log('  Vendor:   vendor@cholbe.com / Password123!');
   console.log('  Doctor:   doctor@cholbe.com / Password123!');
   console.log(`  Pharmacy products: ${PHARMACY_PRODUCTS.length}`);
-  console.log(`  Doctors seeded: ${doctorProfiles.length + 1}`);
+  console.log(`  Doctors seeded: 1 active test doctor`);
   console.log(`  Specialties seeded: ${Object.keys(specialties).length}`);
 }
 

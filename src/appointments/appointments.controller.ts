@@ -14,7 +14,7 @@ export class AppointmentsController {
   @Get()
   @ApiOperation({ summary: 'List my consultations / video appointments' })
   findMine(@CurrentUser() user: JwtPayload) {
-    return this.service.findMine(user.sub);
+    return this.service.findMine(user.sub, user.role);
   }
 
   @Get(':id')
