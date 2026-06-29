@@ -19,17 +19,20 @@ const DOCTOR_EMAIL = 'doctor@cholbe.com';
 const PASSWORD = 'Password123!';
 const LIVE_AGORA_CHANNEL = 'cholbe_live_call_test';
 
-function formatTimeSlotLocal(date: Date): string {
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const meridiem = hours >= 12 ? 'PM' : 'AM';
-  const h12 = hours % 12 || 12;
-  return `${h12}:${minutes.toString().padStart(2, '0')} ${meridiem}`;
+function formatTimeSlotDhaka(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Dhaka',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
 }
 
-function todayDateOnly(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+function todayDateOnlyDhaka(): Date {
+  const dateOnly = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka',
+  }).format(new Date());
+  return new Date(`${dateOnly}T12:00:00.000Z`);
 }
 
 async function main() {
@@ -101,7 +104,7 @@ async function main() {
 
   const liveCallTime = new Date();
   liveCallTime.setMinutes(liveCallTime.getMinutes() - 2);
-  const timeSlot = formatTimeSlotLocal(liveCallTime);
+  const timeSlot = formatTimeSlotDhaka(liveCallTime);
 
   await prisma.appointment.deleteMany({
     where: { agoraChannel: LIVE_AGORA_CHANNEL },
@@ -111,11 +114,11 @@ async function main() {
     data: {
       patientId: patient.id,
       doctorId: doctor.id,
-      scheduledDate: todayDateOnly(),
+      scheduledDate: todayDateOnlyDhaka(),
       timeSlot,
       durationMin: 30,
       fee: doctor.fee,
-      status: 'confirmed',
+      status: 'in_progress',
       consultationType: 'VIDEO',
       agoraChannel: LIVE_AGORA_CHANNEL,
       paymentMethod: 'BKASH',
