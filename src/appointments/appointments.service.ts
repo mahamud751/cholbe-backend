@@ -12,6 +12,10 @@ import { AgoraService } from '../agora/agora.service';
 import { DoctorAvailabilityService } from '../doctors/doctor-availability.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { endOfDay, startOfDay } from '../common/utils/availability.util';
+import {
+  formatAppointmentDateBd,
+  parseAppointmentDateOnly,
+} from '../common/utils/bd-time.util';
 
 function normalizePaymentMethod(value?: string): PaymentMethod | undefined {
   if (!value) return undefined;
@@ -128,8 +132,9 @@ export class AppointmentsService {
       throw new BadRequestException('Selected time slot is not available');
     }
 
-    const dayStart = startOfDay(new Date(dateOnly));
-    const dayEnd = endOfDay(new Date(dateOnly));
+    const scheduledDate = parseAppointmentDateOnly(dateOnly);
+    const dayStart = startOfDay(scheduledDate);
+    const dayEnd = endOfDay(scheduledDate);
     const duplicate = await this.prisma.appointment.findFirst({
       where: {
         doctorId: body.doctorId,
@@ -140,7 +145,6 @@ export class AppointmentsService {
     });
     if (duplicate) throw new ConflictException('Time slot already booked');
 
-    const scheduledDate = new Date(`${dateOnly}T12:00:00.000Z`);
     const consultationType = body.consultationType ?? ConsultationType.VIDEO;
     const channel =
       consultationType === ConsultationType.CHAT
@@ -170,7 +174,7 @@ export class AppointmentsService {
       patientId,
       'appointment',
       'Appointment Booked',
-      `Your appointment with Dr. ${appointment.doctor.user.fullName} on ${new Date(appointment.scheduledDate).toLocaleDateString()} at ${appointment.timeSlot} is confirmed.`,
+      `Your appointment with Dr. ${appointment.doctor.user.fullName} on ${formatAppointmentDateBd(appointment.scheduledDate)} at ${appointment.timeSlot} is confirmed.`,
     );
 
     // Notify doctor
@@ -178,7 +182,7 @@ export class AppointmentsService {
       appointment.doctor.user.id,
       'appointment',
       'New Appointment',
-      `A patient booked an appointment on ${new Date(appointment.scheduledDate).toLocaleDateString()} at ${appointment.timeSlot}.`,
+      `A patient booked an appointment on ${formatAppointmentDateBd(appointment.scheduledDate)} at ${appointment.timeSlot}.`,
     );
 
     // Notify admins

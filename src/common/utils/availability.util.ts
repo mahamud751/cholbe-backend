@@ -1,3 +1,9 @@
+import {
+  endOfDayBd,
+  startOfDayBd,
+  toDateOnlyIsoBd,
+} from './bd-time.util';
+
 export function parseTimeToMinutes(value: string): number {
   const match = value.trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
   if (!match) return NaN;
@@ -30,17 +36,13 @@ export function generateTimeSlots(startTime: string, endTime: string, slotMinute
 }
 
 export function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return startOfDayBd(date);
 }
 
 export function endOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
+  return endOfDayBd(date);
 }
 
 export function toDateOnlyIso(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return toDateOnlyIsoBd(date);
 }

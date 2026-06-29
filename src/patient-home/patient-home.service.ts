@@ -1,4 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  pickNextUpcomingAppointment,
+  startOfDayBd,
+} from '../common/utils/bd-time.util';
 import { PrismaService } from '../prisma/prisma.module';
 import {
   isSlotSnoozed,
@@ -56,16 +60,18 @@ export class PatientHomeService {
         take: 6,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.appointment.findFirst({
-        where: {
-          patientId: userId,
-          status: { in: ['scheduled', 'confirmed', 'in_progress'] },
-        },
-        include: {
-          doctor: { include: { user: { select: { fullName: true } } } },
-        },
-        orderBy: { scheduledDate: 'asc' },
-      }),
+      this.prisma.appointment
+        .findMany({
+          where: {
+            patientId: userId,
+            status: { in: ['scheduled', 'confirmed', 'in_progress'] },
+            scheduledDate: { gte: startOfDayBd(new Date()) },
+          },
+          include: {
+            doctor: { include: { user: { select: { fullName: true } } } },
+          },
+        })
+        .then((rows) => pickNextUpcomingAppointment(rows)),
     ]);
 
     const taken = todayLogs.filter((l) => l.status === 'taken').length;

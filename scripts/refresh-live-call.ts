@@ -1,6 +1,6 @@
 /**
  * Refreshes a live video appointment for calling tests.
- * Run before each test session so the slot is always "now".
+ * Run before each test session so the slot is always "now" (Bangladesh time).
  *
  *   npm run db:live-call
  */
@@ -11,6 +11,10 @@ import {
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  liveCallTimeSlotBd,
+  todayAppointmentDateBd,
+} from '../src/common/utils/bd-time.util';
 
 const prisma = new PrismaClient();
 
@@ -18,22 +22,6 @@ const PATIENT_EMAIL = 'pino@gmail.com';
 const DOCTOR_EMAIL = 'doctor@cholbe.com';
 const PASSWORD = 'Password123!';
 const LIVE_AGORA_CHANNEL = 'cholbe_live_call_test';
-
-function formatTimeSlotDhaka(date: Date): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Dhaka',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
-}
-
-function todayDateOnlyDhaka(): Date {
-  const dateOnly = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Dhaka',
-  }).format(new Date());
-  return new Date(`${dateOnly}T12:00:00.000Z`);
-}
 
 async function main() {
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
@@ -102,9 +90,7 @@ async function main() {
     });
   }
 
-  const liveCallTime = new Date();
-  liveCallTime.setMinutes(liveCallTime.getMinutes() - 2);
-  const timeSlot = formatTimeSlotDhaka(liveCallTime);
+  const timeSlot = liveCallTimeSlotBd(2);
 
   await prisma.appointment.deleteMany({
     where: { agoraChannel: LIVE_AGORA_CHANNEL },
@@ -114,7 +100,7 @@ async function main() {
     data: {
       patientId: patient.id,
       doctorId: doctor.id,
-      scheduledDate: todayDateOnlyDhaka(),
+      scheduledDate: todayAppointmentDateBd(),
       timeSlot,
       durationMin: 30,
       fee: doctor.fee,
@@ -125,11 +111,11 @@ async function main() {
     },
   });
 
-  console.log('\nLive call test data ready:\n');
+  console.log('\nLive call test data ready (Bangladesh time):\n');
   console.log(`  Patient:  ${PATIENT_EMAIL} / ${PASSWORD}`);
   console.log(`  Doctor:   ${DOCTOR_EMAIL} / ${PASSWORD}`);
   console.log(`  Appointment id: ${appointment.id}`);
-  console.log(`  Time slot: ${timeSlot} (started ~2 min ago — join now)`);
+  console.log(`  Time slot: ${timeSlot} (BD — started ~2 min ago, join now)`);
   console.log(`  Agora channel: ${LIVE_AGORA_CHANNEL}`);
   console.log(`  Doctor status: ACTIVE, online: true\n`);
 }

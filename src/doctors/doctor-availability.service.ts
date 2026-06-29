@@ -7,6 +7,11 @@ import {
   startOfDay,
   toDateOnlyIso,
 } from '../common/utils/availability.util';
+import {
+  dayOfWeekBd,
+  parseAppointmentDateOnly,
+  toDateOnlyIsoBd,
+} from '../common/utils/bd-time.util';
 
 @Injectable()
 export class DoctorAvailabilityService {
@@ -20,7 +25,7 @@ export class DoctorAvailabilityService {
 
   async getSlotsForDate(doctorId: string, dateIso: string) {
     await this.getDoctor(doctorId);
-    const date = startOfDay(new Date(dateIso));
+    const date = parseAppointmentDateOnly(dateIso);
     if (Number.isNaN(date.getTime())) {
       return { date: dateIso, available: false, slots: [] as string[] };
     }
@@ -35,7 +40,7 @@ export class DoctorAvailabilityService {
     }
 
     const weeklySlots = await this.prisma.doctorWeeklyAvailability.findMany({
-      where: { doctorId, dayOfWeek: date.getDay(), isActive: true },
+      where: { doctorId, dayOfWeek: dayOfWeekBd(date), isActive: true },
       orderBy: { startTime: 'asc' },
     });
     if (!weeklySlots.length) {
@@ -65,7 +70,7 @@ export class DoctorAvailabilityService {
 
   async getAvailableDates(doctorId: string, fromIso: string, days = 14) {
     await this.getDoctor(doctorId);
-    const from = startOfDay(new Date(fromIso));
+    const from = startOfDay(parseAppointmentDateOnly(fromIso));
     const weekly = await this.prisma.doctorWeeklyAvailability.findMany({
       where: { doctorId, isActive: true },
     });
@@ -86,10 +91,10 @@ export class DoctorAvailabilityService {
 
     const dates: { date: string; available: boolean }[] = [];
     for (let i = 0; i < days; i++) {
-      const d = new Date(from);
-      d.setDate(from.getDate() + i);
-      const iso = toDateOnlyIso(d);
-      const dayEnabled = activeDays.has(d.getDay()) && !blackout.has(iso);
+      const dayStart = new Date(from.getTime() + i * 24 * 60 * 60 * 1000);
+      const iso = toDateOnlyIsoBd(dayStart);
+      const dayEnabled =
+        activeDays.has(dayOfWeekBd(parseAppointmentDateOnly(iso))) && !blackout.has(iso);
       if (!dayEnabled) {
         dates.push({ date: iso, available: false });
         continue;
@@ -185,7 +190,7 @@ export class DoctorAvailabilityService {
 
   async setDateOverride(doctorId: string, dateIso: string, isAvailable: boolean) {
     await this.getDoctor(doctorId);
-    const date = startOfDay(new Date(dateIso));
+    const date = parseAppointmentDateOnly(dateIso);
     return this.prisma.doctorDateOverride.upsert({
       where: { doctorId_date: { doctorId, date } },
       create: { doctorId, date, isAvailable },

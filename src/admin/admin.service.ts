@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.module';
 import { VendorProductsService } from '../vendor-products/vendor-products.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { formatAppointmentDateBd } from '../common/utils/bd-time.util';
 
 @Injectable()
 export class AdminService {
@@ -170,7 +171,7 @@ export class AdminService {
         apptData.patientId,
         'appointment',
         'Appointment Status Updated',
-        `Your appointment on ${new Date(apptData.scheduledDate).toLocaleDateString()} at ${apptData.timeSlot} is now ${status}.`,
+        `Your appointment on ${formatAppointmentDateBd(apptData.scheduledDate)} at ${apptData.timeSlot} is now ${status}.`,
       );
     }
 

@@ -8,6 +8,10 @@ import {
   UpdateHealthVitalsDto,
   UpdatePatientProfileDto,
 } from './dto/patient-profile.dto';
+import {
+  pickNextUpcomingAppointment,
+  startOfDayBd,
+} from '../common/utils/bd-time.util';
 
 @Injectable()
 export class PatientProfileService {
@@ -323,17 +327,18 @@ export class PatientProfileService {
       this.prisma.medicationSchedule.count({
         where: { patientId: userId, isActive: true },
       }),
-      this.prisma.appointment.findFirst({
-        where: {
-          patientId: userId,
-          status: { in: ['scheduled', 'confirmed', 'in_progress'] },
-          scheduledDate: { gte: new Date() },
-        },
-        include: {
-          doctor: { include: { user: { select: { fullName: true, avatarUrl: true } } } },
-        },
-        orderBy: { scheduledDate: 'asc' },
-      }),
+      this.prisma.appointment
+        .findMany({
+          where: {
+            patientId: userId,
+            status: { in: ['scheduled', 'confirmed', 'in_progress'] },
+            scheduledDate: { gte: startOfDayBd(new Date()) },
+          },
+          include: {
+            doctor: { include: { user: { select: { fullName: true, avatarUrl: true } } } },
+          },
+        })
+        .then((rows) => pickNextUpcomingAppointment(rows)),
       this.prisma.healthReport.findFirst({
         where: { patientId: userId },
         orderBy: { reportDate: 'desc' },
@@ -424,17 +429,18 @@ export class PatientProfileService {
           },
         }),
         this.getLatestVitals(memberUserId),
-        this.prisma.appointment.findFirst({
-          where: {
-            patientId: memberUserId,
-            status: { in: ['scheduled', 'confirmed', 'in_progress'] },
-            scheduledDate: { gte: new Date() },
-          },
-          include: {
-            doctor: { include: { user: { select: { fullName: true } } } },
-          },
-          orderBy: { scheduledDate: 'asc' },
-        }),
+        this.prisma.appointment
+          .findMany({
+            where: {
+              patientId: memberUserId,
+              status: { in: ['scheduled', 'confirmed', 'in_progress'] },
+              scheduledDate: { gte: startOfDayBd(new Date()) },
+            },
+            include: {
+              doctor: { include: { user: { select: { fullName: true } } } },
+            },
+          })
+          .then((rows) => pickNextUpcomingAppointment(rows)),
       ]);
 
     const { passwordHash: _, ...safeUser } = member.memberUser;

@@ -2,6 +2,13 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.module';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DoctorAvailabilityService } from '../doctors/doctor-availability.service';
+import {
+  ACTIVE_APPOINTMENT_STATUSES,
+  isAppointmentUpcoming,
+  pickNextUpcomingAppointment,
+  startOfDayBd,
+  endOfDayBd,
+} from '../common/utils/bd-time.util';
 
 function calcDuration(startDate: Date, endDate?: Date | null, isPresent?: boolean): string {
   const end = isPresent || !endDate ? new Date() : endDate;
@@ -94,26 +101,24 @@ export class DoctorPortalService {
   async getDashboard(userId: string) {
     const profile = await this.getProfile(userId);
     const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now);
-    todayEnd.setHours(23, 59, 59, 999);
+    const todayStart = startOfDayBd(now);
+    const todayEnd = endOfDayBd(now);
     const baseWhere = { doctorId: profile.id };
 
-    const [todayCount, upcomingCount, totalAppointments, patients, nextAppointment, recentAppointments, consultationCount] =
+    const [todayAppointments, upcomingCandidates, totalAppointments, patients, recentAppointments, consultationCount] =
       await Promise.all([
-        this.prisma.appointment.count({
+        this.prisma.appointment.findMany({
           where: {
             ...baseWhere,
             scheduledDate: { gte: todayStart, lte: todayEnd },
             status: { notIn: ['cancelled', 'CANCELLED', 'no_show', 'NO_SHOW'] },
           },
         }),
-        this.prisma.appointment.count({
+        this.prisma.appointment.findMany({
           where: {
             ...baseWhere,
-            scheduledDate: { gte: now },
-            status: { in: ['scheduled', 'confirmed', 'in_progress', 'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] },
+            scheduledDate: { gte: todayStart },
+            status: { in: [...ACTIVE_APPOINTMENT_STATUSES] },
           },
         }),
         this.prisma.appointment.count({ where: baseWhere }),
@@ -121,15 +126,6 @@ export class DoctorPortalService {
           where: baseWhere,
           distinct: ['patientId'],
           select: { patientId: true },
-        }),
-        this.prisma.appointment.findFirst({
-          where: {
-            ...baseWhere,
-            scheduledDate: { gte: now },
-            status: { notIn: ['cancelled', 'CANCELLED', 'completed', 'COMPLETED', 'no_show', 'NO_SHOW'] },
-          },
-          orderBy: { scheduledDate: 'asc' },
-          include: this.appointmentInclude,
         }),
         this.prisma.appointment.findMany({
           where: baseWhere,
@@ -146,11 +142,26 @@ export class DoctorPortalService {
         }),
       ]);
 
+    const todayCount = todayAppointments.length;
+    const upcomingAppointments = upcomingCandidates.filter((appt) =>
+      isAppointmentUpcoming(appt.scheduledDate, appt.timeSlot, appt.status, appt.durationMin),
+    );
+    const nextAppointment = pickNextUpcomingAppointment(
+      await this.prisma.appointment.findMany({
+        where: {
+          ...baseWhere,
+          scheduledDate: { gte: todayStart },
+          status: { notIn: ['cancelled', 'CANCELLED', 'completed', 'COMPLETED', 'no_show', 'NO_SHOW'] },
+        },
+        include: this.appointmentInclude,
+      }),
+    );
+
     return {
       doctor: profile,
       stats: {
         todayAppointments: todayCount,
-        upcomingAppointments: upcomingCount,
+        upcomingAppointments: upcomingAppointments.length,
         totalPatients: patients.length,
         totalAppointments,
         activeConsultations: consultationCount,

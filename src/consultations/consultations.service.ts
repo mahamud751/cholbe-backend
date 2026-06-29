@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
+import { pickNextUpcomingAppointment } from '../common/utils/bd-time.util';
 
 @Injectable()
 export class ConsultationsService {
@@ -35,7 +36,7 @@ export class ConsultationsService {
     });
     if (!doctor) throw new NotFoundException('Doctor not found');
 
-    const appt = await this.prisma.appointment.findFirst({
+    const appointments = await this.prisma.appointment.findMany({
       where: {
         patientId: userId,
         doctorId,
@@ -47,7 +48,12 @@ export class ConsultationsService {
       },
     });
 
-    return appt;
+    return (
+      pickNextUpcomingAppointment(appointments) ??
+      appointments.find((appt) => appt.status === 'in_progress') ??
+      appointments[0] ??
+      null
+    );
   }
 
   async listMessages(appointmentId: string, userId: string) {

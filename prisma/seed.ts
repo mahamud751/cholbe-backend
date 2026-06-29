@@ -11,21 +11,15 @@ import {
   DoctorProfileStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  formatTimeSlotBd,
+  liveCallTimeSlotBd,
+  parseAppointmentDateOnly,
+  toDateOnlyIsoBd,
+  todayAppointmentDateBd,
+} from '../src/common/utils/bd-time.util';
 
 const prisma = new PrismaClient();
-
-function formatTimeSlotLocal(date: Date): string {
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const meridiem = hours >= 12 ? 'PM' : 'AM';
-  const h12 = hours % 12 || 12;
-  return `${h12}:${minutes.toString().padStart(2, '0')} ${meridiem}`;
-}
-
-function todayDateOnly(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
-}
 
 const PHARMACY_PRODUCTS = [
   {
@@ -702,22 +696,16 @@ async function main() {
       },
     });
 
-    const soon = new Date();
-    soon.setMinutes(soon.getMinutes() + 10);
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 5);
-
-    const liveCallTime = new Date();
-    liveCallTime.setMinutes(liveCallTime.getMinutes() - 2);
+    const soonSlot = formatTimeSlotBd(new Date(Date.now() + 10 * 60 * 1000));
+    const yesterdayIso = toDateOnlyIsoBd(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const nextWeekIso = toDateOnlyIsoBd(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000));
 
     const liveVideoAppt = await prisma.appointment.create({
       data: {
         patientId: pinoUser.id,
         doctorId: assignedDoctor.id,
-        scheduledDate: todayDateOnly(),
-        timeSlot: formatTimeSlotLocal(liveCallTime),
+        scheduledDate: todayAppointmentDateBd(),
+        timeSlot: liveCallTimeSlotBd(2),
         durationMin: 30,
         fee: assignedDoctor.fee,
         status: 'confirmed',
@@ -731,8 +719,8 @@ async function main() {
       data: {
         patientId: customer.id,
         doctorId: assignedDoctor.id,
-        scheduledDate: soon,
-        timeSlot: '10:30 AM',
+        scheduledDate: todayAppointmentDateBd(),
+        timeSlot: soonSlot,
         durationMin: 15,
         fee: assignedDoctor.fee,
         status: 'scheduled',
@@ -746,8 +734,8 @@ async function main() {
       data: {
         patientId: mehidiUser.id,
         doctorId: assignedDoctor.id,
-        scheduledDate: new Date(),
-        timeSlot: '2:00 PM',
+        scheduledDate: todayAppointmentDateBd(),
+        timeSlot: formatTimeSlotBd(new Date(Date.now() + 2 * 60 * 60 * 1000)),
         durationMin: 20,
         fee: assignedDoctor.fee,
         status: 'confirmed',
@@ -760,7 +748,7 @@ async function main() {
       data: {
         patientId: rohimaUser.id,
         doctorId: assignedDoctor.id,
-        scheduledDate: nextWeek,
+        scheduledDate: parseAppointmentDateOnly(nextWeekIso),
         timeSlot: '11:00 AM',
         durationMin: 15,
         fee: assignedDoctor.fee,
@@ -775,7 +763,7 @@ async function main() {
       data: {
         patientId: customer.id,
         doctorId: assignedDoctor.id,
-        scheduledDate: yesterday,
+        scheduledDate: parseAppointmentDateOnly(yesterdayIso),
         timeSlot: '9:00 AM',
         durationMin: 15,
         fee: assignedDoctor.fee,
