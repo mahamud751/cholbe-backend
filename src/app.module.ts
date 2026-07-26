@@ -23,12 +23,13 @@ import { PatientHomeModule } from './patient-home/patient-home.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SpecialtiesModule } from './specialties/specialties.module';
 import { ConsultationsModule } from './consultations/consultations.module';
+import { DoctorPortalModule } from './doctor-portal/doctor-portal.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'] }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -51,6 +52,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     NotificationsModule,
     SpecialtiesModule,
     ConsultationsModule,
+    DoctorPortalModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

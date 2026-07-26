@@ -1,5 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
+import { pickNextUpcomingAppointment } from '../common/utils/bd-time.util';
 
 @Injectable()
 export class ConsultationsService {
@@ -30,7 +36,7 @@ export class ConsultationsService {
     });
     if (!doctor) throw new NotFoundException('Doctor not found');
 
-    const appt = await this.prisma.appointment.findFirst({
+    const appointments = await this.prisma.appointment.findMany({
       where: {
         patientId: userId,
         doctorId,
@@ -42,7 +48,12 @@ export class ConsultationsService {
       },
     });
 
-    return appt;
+    return (
+      pickNextUpcomingAppointment(appointments) ??
+      appointments.find((appt) => appt.status === 'in_progress') ??
+      appointments[0] ??
+      null
+    );
   }
 
   async listMessages(appointmentId: string, userId: string) {
@@ -78,6 +89,10 @@ export class ConsultationsService {
 
   async getContext(appointmentId: string, userId: string) {
     const appt = await this.getAppointmentForUser(appointmentId, userId);
+    const patient = await this.prisma.user.findUnique({
+      where: { id: appt.patientId },
+      select: { id: true, fullName: true, avatarUrl: true, phone: true, email: true },
+    });
     const latestReport = await this.prisma.healthReport.findFirst({
       where: { patientId: appt.patientId },
       orderBy: { reportDate: 'desc' },
@@ -86,6 +101,7 @@ export class ConsultationsService {
     return {
       appointment: {
         ...appointmentRest,
+        patient,
         doctor: {
           id: doctor.id,
           specialty: doctor.specialty,
@@ -112,15 +128,22 @@ export class ConsultationsService {
   ) {
     const appt = await this.getAppointmentForUser(appointmentId, userId);
     if (appt.patientId !== userId) throw new ForbiddenException('Only patient can rate');
-    return this.prisma.consultationFeedback.upsert({
+    if (appt.status.toLowerCase() !== 'completed') {
+      throw new BadRequestException('You can only review completed consultations');
+    }
+    if (!body.rating || body.rating < 1 || body.rating > 5) {
+      throw new BadRequestException('Rating must be between 1 and 5');
+    }
+    const existing = await this.prisma.consultationFeedback.findUnique({
       where: { appointmentId },
-      create: {
+    });
+    if (existing) {
+      throw new BadRequestException('Review already submitted for this consultation');
+    }
+    return this.prisma.consultationFeedback.create({
+      data: {
         appointmentId,
         doctorId: appt.doctorId,
-        rating: body.rating,
-        comment: body.comment,
-      },
-      update: {
         rating: body.rating,
         comment: body.comment,
       },

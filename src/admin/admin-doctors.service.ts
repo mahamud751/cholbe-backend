@@ -8,6 +8,11 @@ import { DoctorProfileStatus, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.module';
 import { DoctorAvailabilityService } from '../doctors/doctor-availability.service';
+import {
+  ACTIVE_APPOINTMENT_STATUSES,
+  isAppointmentUpcoming,
+  startOfDayBd,
+} from '../common/utils/bd-time.util';
 
 function calcDuration(startDate: Date, endDate?: Date | null, isPresent?: boolean): string {
   const end = isPresent || !endDate ? new Date() : endDate;
@@ -203,13 +208,16 @@ export class AdminDoctorsService {
 
   async remove(id: string) {
     const doctor = await this.findOne(id);
-    const activeAppointments = await this.prisma.appointment.count({
+    const upcomingCandidates = await this.prisma.appointment.findMany({
       where: {
         doctorId: id,
-        status: { in: ['scheduled', 'confirmed', 'in_progress', 'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] },
-        scheduledDate: { gte: new Date() },
+        status: { in: [...ACTIVE_APPOINTMENT_STATUSES] },
+        scheduledDate: { gte: startOfDayBd(new Date()) },
       },
     });
+    const activeAppointments = upcomingCandidates.filter((appt) =>
+      isAppointmentUpcoming(appt.scheduledDate, appt.timeSlot, appt.status, appt.durationMin),
+    ).length;
     if (activeAppointments > 0) throw new BadRequestException('Doctor has upcoming appointments');
     await this.prisma.user.delete({ where: { id: doctor.userId } });
     return { deleted: true };

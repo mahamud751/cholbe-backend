@@ -1,15 +1,21 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConsultationType, PaymentMethod } from '@prisma/client';
+import { ConsultationType, PaymentMethod, UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.module';
 import { AgoraService } from '../agora/agora.service';
 import { DoctorAvailabilityService } from '../doctors/doctor-availability.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { endOfDay, startOfDay } from '../common/utils/availability.util';
+import {
+  formatAppointmentDateBd,
+  parseAppointmentDateOnly,
+} from '../common/utils/bd-time.util';
 
 function normalizePaymentMethod(value?: string): PaymentMethod | undefined {
   if (!value) return undefined;
@@ -26,11 +32,43 @@ export class AppointmentsService {
     private prisma: PrismaService,
     private agora: AgoraService,
     private availability: DoctorAvailabilityService,
+    private notifications: NotificationsService,
   ) {}
 
-  async findMine(patientId: string) {
+  private readonly appointmentInclude = {
+    doctor: {
+      include: { user: { select: { id: true, fullName: true, avatarUrl: true } } },
+    },
+    patient: {
+      select: { id: true, fullName: true, avatarUrl: true, phone: true, email: true },
+    },
+  };
+
+  private async findOneForUser(userId: string, id: string) {
+    const appt = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: this.appointmentInclude,
+    });
+    if (!appt) throw new NotFoundException('Appointment not found');
+    const isPatient = appt.patientId === userId;
+    const isDoctor = appt.doctor.user.id === userId;
+    if (!isPatient && !isDoctor) throw new ForbiddenException('Not allowed');
+    return appt;
+  }
+
+  async findMine(userId: string, role?: string) {
+    if (role?.toUpperCase() === UserRole.DOCTOR) {
+      const doctor = await this.prisma.doctorProfile.findUnique({ where: { userId } });
+      if (!doctor) throw new NotFoundException('Doctor profile not found');
+      return this.prisma.appointment.findMany({
+        where: { doctorId: doctor.id },
+        include: this.appointmentInclude,
+        orderBy: { scheduledDate: 'desc' },
+      });
+    }
+
     return this.prisma.appointment.findMany({
-      where: { patientId },
+      where: { patientId: userId },
       include: {
         doctor: { include: { user: { select: { fullName: true, avatarUrl: true } } } },
       },
@@ -38,27 +76,34 @@ export class AppointmentsService {
     });
   }
 
-  async findOne(patientId: string, id: string) {
-    const appt = await this.prisma.appointment.findFirst({
-      where: { id, patientId },
-      include: {
-        doctor: { include: { user: { select: { fullName: true, avatarUrl: true } } } },
-      },
-    });
-    if (!appt) throw new NotFoundException('Appointment not found');
-    return appt;
+  async findOne(userId: string, id: string) {
+    return this.findOneForUser(userId, id);
   }
 
-  async updateStatus(patientId: string, id: string, status: string) {
-    await this.findOne(patientId, id);
-    return this.prisma.appointment.update({
+  async updateStatus(userId: string, id: string, status: string) {
+    const appt = await this.findOneForUser(userId, id);
+    await this.prisma.appointment.update({
       where: { id },
       data: { status },
     });
+
+    const isDoctor = appt.doctor.user.id === userId;
+    const notifyUserId = isDoctor ? appt.patientId : appt.doctor.user.id;
+    void this.notifications.create(
+      notifyUserId,
+      'appointment',
+      'Appointment Status Updated',
+      `Your appointment has been ${status}.`,
+    );
+
+    return this.prisma.appointment.findUnique({
+      where: { id },
+      include: this.appointmentInclude,
+    });
   }
 
-  async getAgoraToken(patientId: string, id: string) {
-    const appt = await this.findOne(patientId, id);
+  async getAgoraToken(userId: string, id: string) {
+    const appt = await this.findOneForUser(userId, id);
     if (!appt.agoraChannel) {
       throw new NotFoundException('Video channel not ready for this appointment');
     }
@@ -87,8 +132,9 @@ export class AppointmentsService {
       throw new BadRequestException('Selected time slot is not available');
     }
 
-    const dayStart = startOfDay(new Date(dateOnly));
-    const dayEnd = endOfDay(new Date(dateOnly));
+    const scheduledDate = parseAppointmentDateOnly(dateOnly);
+    const dayStart = startOfDay(scheduledDate);
+    const dayEnd = endOfDay(scheduledDate);
     const duplicate = await this.prisma.appointment.findFirst({
       where: {
         doctorId: body.doctorId,
@@ -99,14 +145,13 @@ export class AppointmentsService {
     });
     if (duplicate) throw new ConflictException('Time slot already booked');
 
-    const scheduledDate = new Date(`${dateOnly}T12:00:00.000Z`);
     const consultationType = body.consultationType ?? ConsultationType.VIDEO;
     const channel =
       consultationType === ConsultationType.CHAT
         ? null
         : `cholbe_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
-    return this.prisma.appointment.create({
+    const appointment = await this.prisma.appointment.create({
       data: {
         patientId,
         doctorId: doctor.id,
@@ -120,8 +165,33 @@ export class AppointmentsService {
         status: 'scheduled',
       },
       include: {
-        doctor: { include: { user: { select: { fullName: true, avatarUrl: true } } } },
+        doctor: { include: { user: { select: { fullName: true, avatarUrl: true, id: true } } } },
       },
     });
+
+    // Notify patient
+    void this.notifications.create(
+      patientId,
+      'appointment',
+      'Appointment Booked',
+      `Your appointment with Dr. ${appointment.doctor.user.fullName} on ${formatAppointmentDateBd(appointment.scheduledDate)} at ${appointment.timeSlot} is confirmed.`,
+    );
+
+    // Notify doctor
+    void this.notifications.create(
+      appointment.doctor.user.id,
+      'appointment',
+      'New Appointment',
+      `A patient booked an appointment on ${formatAppointmentDateBd(appointment.scheduledDate)} at ${appointment.timeSlot}.`,
+    );
+
+    // Notify admins
+    void this.notifications.notifyAdmins(
+      'appointment',
+      'New Appointment Booked',
+      `A new appointment has been scheduled.`,
+    );
+
+    return appointment;
   }
 }

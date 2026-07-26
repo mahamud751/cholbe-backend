@@ -42,6 +42,13 @@ export class OrdersController {
     return this.ordersService.updateStatus(id, status, note);
   }
 
+  @Get('vendor/:id')
+  @Roles(UserRole.VENDOR)
+  @ApiOperation({ summary: 'Vendor single order detail' })
+  findVendorOrder(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.ordersService.findVendorOrder(user.sub, id);
+  }
+
   @Get()
   @Roles(UserRole.CUSTOMER)
   @ApiOperation({ summary: 'Customer order history' })

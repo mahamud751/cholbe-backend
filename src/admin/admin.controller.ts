@@ -48,6 +48,24 @@ export class AdminController {
     return this.adminService.listOrders(status);
   }
 
+  @Get('orders/:id')
+  @ApiOperation({ summary: 'Order detail with items and timeline' })
+  getOrder(@Param('id') id: string) {
+    return this.adminService.getOrder(id);
+  }
+
+  @Patch('orders/:id/status')
+  @ApiOperation({ summary: 'Admin update order status' })
+  updateOrderStatus(@Param('id') id: string, @Body('status') status: OrderStatus) {
+    return this.adminService.updateOrderStatus(id, status);
+  }
+
+  @Get('chart/orders-monthly')
+  @ApiOperation({ summary: 'Monthly order counts for dashboard chart' })
+  ordersMonthly() {
+    return this.adminService.ordersMonthly();
+  }
+
   @Get('vendors')
   @ApiOperation({ summary: 'Vendor list' })
   vendors(@Query('status') status?: VendorApprovalStatus) {

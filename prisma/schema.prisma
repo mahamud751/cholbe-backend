@@ -123,6 +123,8 @@ model User {
   otpCodes        OtpCode[]
   patientAppointments Appointment[] @relation("PatientAppointments")
   consultationMessages ConsultationMessage[]
+  familyMemberRecord  FamilyMember?
+  managedFamilyProfiles PatientProfile[] @relation("ManagedFamilyAccounts")
 
   @@index([role])
   @@index([status])
@@ -140,6 +142,8 @@ model PatientProfile {
   mealBreakfast String?
   mealLunch    String?
   mealDinner   String?
+  managedByUserId String?
+  managedBy       User?    @relation("ManagedFamilyAccounts", fields: [managedByUserId], references: [id], onDelete: SetNull)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -151,11 +155,14 @@ model FamilyMember {
   id           String         @id @default(uuid())
   patientId    String
   patient      PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  memberUserId String?        @unique
+  memberUser   User?          @relation(fields: [memberUserId], references: [id], onDelete: SetNull)
   name         String
   age          Int?
   gender       String?
   relationship String
   phone        String?
+  email        String?
   avatarUrl    String?
   createdAt    DateTime       @default(now())
 }
@@ -184,6 +191,52 @@ model VendorProfile {
 
   products VendorProduct[]
   orders   Order[]         @relation("VendorOrders")
+  documents     VendorDocument[]
+  payoutMethods VendorPayoutMethod[]
+}
+
+enum VendorDocumentStatus {
+  PENDING
+  VERIFIED
+}
+
+enum VendorPayoutType {
+  BANK
+  BKASH
+  NAGAD
+}
+
+enum DoctorWithdrawalStatus {
+  PENDING
+  PROCESSING
+  PAID
+  REJECTED
+}
+
+model VendorDocument {
+  id        String               @id @default(uuid())
+  vendorId  String
+  vendor    VendorProfile        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  fileName  String
+  fileUrl   String
+  mimeType  String?
+  status    VendorDocumentStatus @default(PENDING)
+  createdAt DateTime             @default(now())
+
+  @@index([vendorId])
+}
+
+model VendorPayoutMethod {
+  id            String           @id @default(uuid())
+  vendorId      String
+  vendor        VendorProfile    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  label         String
+  methodType    VendorPayoutType
+  accountMasked String
+  isPrimary     Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+
+  @@index([vendorId])
 }
 
 model DoctorProfile {
@@ -212,6 +265,38 @@ model DoctorProfile {
   qualifications     DoctorQualification[]
   experiences        DoctorExperience[]
   instructions       DoctorInstruction[]
+  payoutMethods    DoctorPayoutMethod[]
+  withdrawals      DoctorWithdrawal[]
+}
+
+model DoctorPayoutMethod {
+  id            String           @id @default(uuid())
+  doctorId      String
+  doctor        DoctorProfile    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  label         String
+  methodType    VendorPayoutType
+  accountMasked String
+  isPrimary     Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  withdrawals   DoctorWithdrawal[]
+
+  @@index([doctorId])
+}
+
+model DoctorWithdrawal {
+  id             String                 @id @default(uuid())
+  doctorId       String
+  doctor         DoctorProfile          @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  payoutMethodId String?
+  payoutMethod   DoctorPayoutMethod?    @relation(fields: [payoutMethodId], references: [id], onDelete: SetNull)
+  amount         Decimal                @db.Decimal(10, 2)
+  status         DoctorWithdrawalStatus @default(PENDING)
+  note           String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([doctorId])
+  @@index([doctorId, status])
 }
 
 model DoctorQualification {

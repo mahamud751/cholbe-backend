@@ -3,12 +3,16 @@ import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.module';
 import { generateOrderNumber } from '../common/utils/helpers';
 import { CreateOrderDto } from './dto/order.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const DELIVERY_CHARGE = 30;
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async checkout(userId: string, dto: CreateOrderDto) {
     const cart = await this.prisma.cart.findUnique({
@@ -83,6 +87,37 @@ export class OrdersService {
       return created;
     });
 
+    // Notify customer
+    void this.notifications.create(
+      userId,
+      'order',
+      'Order Placed',
+      `Your order #${order.orderNumber} has been placed successfully.`,
+    );
+
+    // Notify vendor if vendorId exists
+    if (vendorId) {
+      const vendorUser = await this.prisma.vendorProfile.findUnique({
+        where: { id: vendorId },
+        select: { userId: true, pharmacyName: true },
+      });
+      if (vendorUser) {
+        void this.notifications.create(
+          vendorUser.userId,
+          'order',
+          'New Order Received',
+          `A new order #${order.orderNumber} has been placed.`,
+        );
+      }
+    }
+
+    // Notify admins
+    void this.notifications.notifyAdmins(
+      'order',
+      'New Order',
+      `Order #${order.orderNumber} was placed by a customer.`,
+    );
+
     return order;
   }
 
@@ -134,6 +169,21 @@ export class OrdersService {
       this.prisma.order.update({ where: { id: orderId }, data: { status } }),
       this.prisma.orderStatusEvent.create({ data: { orderId, status, note } }),
     ]);
+
+    // Notify customer
+    const ord = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true, orderNumber: true },
+    });
+    if (ord) {
+      void this.notifications.create(
+        ord.customerId,
+        'order',
+        'Order Status Updated',
+        `Your order #${ord.orderNumber} is now ${status.toLowerCase().replace('_', ' ')}.`,
+      );
+    }
+
     return this.prisma.order.findUnique({
       where: { id: orderId },
       include: { statusEvents: true },
@@ -152,5 +202,21 @@ export class OrdersService {
       include: { items: true, customer: { select: { fullName: true, phone: true } } },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async findVendorOrder(vendorUserId: string, orderId: string) {
+    const vendor = await this.prisma.vendorProfile.findUnique({ where: { userId: vendorUserId } });
+    if (!vendor) throw new NotFoundException('Vendor profile not found');
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, vendorId: vendor.id },
+      include: {
+        customer: { select: { fullName: true, phone: true, email: true, avatarUrl: true } },
+        items: true,
+        statusEvents: { orderBy: { createdAt: 'asc' } },
+        payment: true,
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
   }
 }

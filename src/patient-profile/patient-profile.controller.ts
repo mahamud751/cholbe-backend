@@ -4,6 +4,7 @@ import { PatientProfileService } from './patient-profile.service';
 import {
   EmergencyContactDto,
   FamilyMemberDto,
+  UpdateHealthVitalsDto,
   UpdatePatientProfileDto,
 } from './dto/patient-profile.dto';
 import { CurrentUser, JwtPayload } from '../common/decorators';
@@ -28,6 +29,12 @@ export class PatientProfileController {
     return this.service.updateProfile(user.sub, dto);
   }
 
+  @Patch('vitals')
+  @ApiOperation({ summary: 'Record blood pressure and/or oxygen readings' })
+  updateVitals(@CurrentUser() user: JwtPayload, @Body() dto: UpdateHealthVitalsDto) {
+    return this.service.updateVitals(user.sub, dto);
+  }
+
   @Get('family-members')
   listFamily(@CurrentUser() user: JwtPayload) {
     return this.service.listFamily(user.sub);
@@ -50,6 +57,12 @@ export class PatientProfileController {
   @Delete('family-members/:id')
   removeFamily(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.service.removeFamily(user.sub, id);
+  }
+
+  @Get('family-members/:id/details')
+  @ApiOperation({ summary: 'Parent view — full details for a linked family member account' })
+  familyMemberDetails(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.service.getFamilyMemberDetails(user.sub, id);
   }
 
   @Get('emergency-contacts')

@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../prisma/prisma.module';
 import { VendorProductsService } from '../vendor-products/vendor-products.service';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { formatAppointmentDateBd } from '../common/utils/bd-time.util';
 
 @Injectable()
 export class AdminService {
@@ -16,6 +18,7 @@ export class AdminService {
     private prisma: PrismaService,
     private vendorProducts: VendorProductsService,
     private usersService: UsersService,
+    private notifications: NotificationsService,
   ) {}
 
   async dashboard() {
@@ -38,7 +41,8 @@ export class AdminService {
     return this.prisma.order.findMany({
       where: status ? { status } : {},
       include: {
-        customer: { select: { fullName: true, phone: true } },
+        customer: { select: { fullName: true, phone: true, avatarUrl: true } },
+        vendor: { select: { pharmacyName: true } },
         items: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -53,10 +57,26 @@ export class AdminService {
   }
 
   async updateVendorStatus(vendorId: string, approvalStatus: VendorApprovalStatus) {
-    return this.prisma.vendorProfile.update({
+    const result = await this.prisma.vendorProfile.update({
       where: { id: vendorId },
       data: { approvalStatus },
     });
+
+    const vendor = await this.prisma.vendorProfile.findUnique({
+      where: { id: vendorId },
+      select: { userId: true, pharmacyName: true },
+    });
+    if (vendor) {
+      const statusLabel = approvalStatus === 'APPROVED' ? 'approved' : 'rejected';
+      void this.notifications.create(
+        vendor.userId,
+        'vendor',
+        `Application ${approvalStatus === 'APPROVED' ? 'Approved' : 'Rejected'}`,
+        `Your pharmacy application has been ${statusLabel}.`,
+      );
+    }
+
+    return result;
   }
 
   async listUsers(role?: UserRole, status?: UserStatus) {
@@ -140,7 +160,22 @@ export class AdminService {
   async updateAppointmentStatus(id: string, status: string) {
     const appt = await this.prisma.appointment.findUnique({ where: { id } });
     if (!appt) throw new Error('Appointment not found');
-    return this.prisma.appointment.update({ where: { id }, data: { status } });
+    const result = await this.prisma.appointment.update({ where: { id }, data: { status } });
+
+    const apptData = await this.prisma.appointment.findUnique({
+      where: { id },
+      select: { patientId: true, scheduledDate: true, timeSlot: true },
+    });
+    if (apptData) {
+      void this.notifications.create(
+        apptData.patientId,
+        'appointment',
+        'Appointment Status Updated',
+        `Your appointment on ${formatAppointmentDateBd(apptData.scheduledDate)} at ${apptData.timeSlot} is now ${status}.`,
+      );
+    }
+
+    return result;
   }
 
   async listReviews(doctorId?: string) {
@@ -163,5 +198,61 @@ export class AdminService {
     if (!review) throw new Error('Review not found');
     await this.prisma.consultationFeedback.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  async getOrder(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        customer: { select: { fullName: true, phone: true, email: true, avatarUrl: true } },
+        vendor: { select: { pharmacyName: true, phone: true } },
+        items: true,
+        statusEvents: { orderBy: { createdAt: 'asc' } },
+        payment: true,
+      },
+    });
+  }
+
+  async updateOrderStatus(id: string, status: OrderStatus) {
+    const result = await this.prisma.order.update({
+      where: { id },
+      data: {
+        status,
+        statusEvents: { create: { status, note: `Status updated to ${status}` } },
+      },
+    });
+
+    const ord = await this.prisma.order.findUnique({
+      where: { id },
+      select: { customerId: true, orderNumber: true },
+    });
+    if (ord) {
+      void this.notifications.create(
+        ord.customerId,
+        'order',
+        'Order Status Updated',
+        `Your order #${ord.orderNumber} is now ${status.toLowerCase().replace(/_/g, ' ')}.`,
+      );
+    }
+
+    return result;
+  }
+
+  async ordersMonthly() {
+    const now = new Date();
+    const months: { month: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const from = new Date(d.getFullYear(), d.getMonth(), 1);
+      const to = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+      const count = await this.prisma.order.count({
+        where: { createdAt: { gte: from, lte: to } },
+      });
+      months.push({
+        month: d.toLocaleString('default', { month: 'short' }),
+        count,
+      });
+    }
+    return months;
   }
 }

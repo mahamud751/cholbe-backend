@@ -71,4 +71,11 @@ export class MedicinesService {
     }
     return this.prisma.medicine.update({ where: { id }, data: dto });
   }
+
+  async delete(id: string) {
+    const medicine = await this.prisma.medicine.findUnique({ where: { id } });
+    if (!medicine) throw new NotFoundException('Medicine not found');
+    await this.prisma.medicine.delete({ where: { id } });
+    return { deleted: true };
+  }
 }

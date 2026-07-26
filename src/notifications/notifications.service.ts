@@ -29,4 +29,20 @@ export class NotificationsService {
       data: { isRead: true },
     });
   }
+
+  async create(userId: string, category: string, title: string, body: string) {
+    return this.prisma.notification.create({
+      data: { userId, category, title, body },
+    });
+  }
+
+  async notifyAdmins(category: string, title: string, body: string) {
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    });
+    await Promise.all(
+      admins.map(a => this.create(a.id, category, title, body)),
+    );
+  }
 }
