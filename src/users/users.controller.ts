@@ -1,4 +1,4 @@
-import { Body, Controller, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CurrentUser, JwtPayload } from '../common/decorators';
@@ -18,5 +18,13 @@ export class UsersController {
     @Body() body: { fullName?: string; phone?: string; avatarUrl?: string },
   ) {
     return this.usersService.updateProfile(user.sub, body);
+  }
+
+  @Delete('me')
+  @ApiOperation({
+    summary: 'Delete current user account (Play Store account deletion)',
+  })
+  deleteMe(@CurrentUser() user: JwtPayload) {
+    return this.usersService.deleteOwnAccount(user.sub);
   }
 }
