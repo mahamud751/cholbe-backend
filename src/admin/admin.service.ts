@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   OrderStatus,
   PaymentStatus,
@@ -11,6 +11,7 @@ import { VendorProductsService } from '../vendor-products/vendor-products.servic
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { formatAppointmentDateBd } from '../common/utils/bd-time.util';
+import { assertOrderStatusTransition } from '../common/utils/order-status.util';
 
 @Injectable()
 export class AdminService {
@@ -214,7 +215,12 @@ export class AdminService {
   }
 
   async updateOrderStatus(id: string, status: OrderStatus) {
-    const result = await this.prisma.order.update({
+    const existing = await this.prisma.order.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Order not found');
+
+    assertOrderStatusTransition(existing.status, status, { allowForwardSkip: true });
+
+    await this.prisma.order.update({
       where: { id },
       data: {
         status,
@@ -235,7 +241,7 @@ export class AdminService {
       );
     }
 
-    return result;
+    return this.getOrder(id);
   }
 
   async ordersMonthly() {
