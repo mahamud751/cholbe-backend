@@ -24,6 +24,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { SpecialtiesModule } from './specialties/specialties.module';
 import { ConsultationsModule } from './consultations/consultations.module';
 import { MapsModule } from './maps/maps.module';
+import { GeminiModule } from './gemini/gemini.module';
 import { DoctorPortalModule } from './doctor-portal/doctor-portal.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -55,6 +56,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     ConsultationsModule,
     DoctorPortalModule,
     MapsModule,
+    GeminiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
