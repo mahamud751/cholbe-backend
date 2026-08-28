@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { MedicineSource, UserRole } from '@prisma/client';
+import { MedicineSource, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.module';
 import { CreateMedicineDto, MedicineQueryDto, UpdateMedicineDto } from './dto/medicine.dto';
 
@@ -7,10 +7,20 @@ import { CreateMedicineDto, MedicineQueryDto, UpdateMedicineDto } from './dto/me
 export class MedicinesService {
   constructor(private prisma: PrismaService) {}
 
+  private toMedicineData(dto: CreateMedicineDto | UpdateMedicineDto) {
+    const { infoSections, ...rest } = dto;
+    return {
+      ...rest,
+      ...(infoSections !== undefined
+        ? { infoSections: infoSections as unknown as Prisma.InputJsonValue }
+        : {}),
+    };
+  }
+
   async createByDoctor(userId: string, dto: CreateMedicineDto) {
     return this.prisma.medicine.create({
       data: {
-        ...dto,
+        ...this.toMedicineData(dto),
         source: MedicineSource.DOCTOR,
         createdByUserId: userId,
       },
@@ -20,7 +30,7 @@ export class MedicinesService {
   async createByAdmin(userId: string, dto: CreateMedicineDto) {
     return this.prisma.medicine.create({
       data: {
-        ...dto,
+        ...this.toMedicineData(dto),
         source: MedicineSource.ADMIN,
         createdByUserId: userId,
       },
@@ -69,7 +79,7 @@ export class MedicinesService {
     if (role === UserRole.DOCTOR && medicine.createdByUserId !== userId) {
       throw new ForbiddenException('You can only edit medicines you created');
     }
-    return this.prisma.medicine.update({ where: { id }, data: dto });
+    return this.prisma.medicine.update({ where: { id }, data: this.toMedicineData(dto) });
   }
 
   async delete(id: string) {

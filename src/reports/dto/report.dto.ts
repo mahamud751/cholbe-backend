@@ -41,4 +41,24 @@ export class CreateReportDto {
   @IsOptional()
   @IsString()
   tip?: string;
+
+  @ApiPropertyOptional({ example: 'Rahman Uddin' })
+  @IsOptional()
+  @IsString()
+  patientName?: string;
+
+  @ApiPropertyOptional({ example: 'Dr. Karim Ahmed' })
+  @IsOptional()
+  @IsString()
+  referredDoctorName?: string;
+
+  @ApiPropertyOptional({ example: 'Cardiologist' })
+  @IsOptional()
+  @IsString()
+  referredDoctorSpecialty?: string;
+
+  @ApiPropertyOptional({ example: 'Follow up in two weeks.' })
+  @IsOptional()
+  @IsString()
+  comments?: string;
 }

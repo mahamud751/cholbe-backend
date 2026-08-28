@@ -27,4 +27,24 @@ export class UpdateReportDto {
   @IsOptional()
   @IsString()
   tip?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  patientName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  referredDoctorName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  referredDoctorSpecialty?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  comments?: string;
 }

@@ -403,6 +403,7 @@ model Medicine {
   brand                String?
   medicineType         String?
   description          String?
+  infoSections         Json?
   imageUrl             String?
   prescriptionRequired Boolean        @default(false)
   source               MedicineSource
@@ -470,9 +471,13 @@ model HealthReport {
   fileUrl    String
   fileName   String?
   mimeType   String?
-  tip        String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  tip                     String?
+  patientName             String?
+  referredDoctorName      String?
+  referredDoctorSpecialty String?
+  comments                String?
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
 
   @@index([patientId])
 }
